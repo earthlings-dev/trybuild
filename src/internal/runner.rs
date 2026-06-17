@@ -1,16 +1,24 @@
 //! Orchestration: expanding globs, synthesizing the throwaway project, building
 //! the test binaries, and checking each one against its `.stderr` snapshot.
+//!
+//! The core ([`compute`]) writes nothing to the terminal: it returns a typed
+//! per-fixture [`Report`]. The human entry ([`run`]) renders that report through
+//! a [`Reporter`] as each case resolves; the programmatic entry ([`try_run`])
+//! returns it untouched.
 
 mod expand;
 
 use self::expand::{ExpandedTest, expand_globs};
-use crate::internal::build::BuildError;
 use crate::internal::build::cargo::{self, Metadata, PackageMetadata};
 use crate::internal::build::json::{Stderr, parse_cargo_json};
-use crate::internal::diagnostics::DiagnosticsError;
-use crate::internal::diagnostics::normalize::Variations;
+use crate::internal::build::{BuildError, CompileFailure};
+use crate::internal::diagnostics::normalize::{self, Variations};
+use crate::internal::diagnostics::{DiagnosticsError, MismatchDetail, UnexpectedSuccess};
 use crate::internal::error;
 use crate::internal::model::{Expected, Name, PathDependency, Test};
+use crate::internal::outcome::{
+    CaseReport, Outcome, OverwriteDetail, PassDetail, Report, WipDetail,
+};
 use crate::internal::path::CanonicalPath;
 use crate::internal::project::KeepGoing;
 use crate::internal::project::Project;
@@ -21,7 +29,7 @@ use crate::internal::project::dependencies::{
 };
 use crate::internal::project::features;
 use crate::internal::project::manifest::{Bin, Edition, Manifest, Package, Workspace};
-use crate::internal::report::message::{Fail, Messages as _, Warn};
+use crate::internal::report::message::{render_case, render_no_tests, render_setup_fail};
 use crate::internal::report::reporter::Reporter;
 use crate::internal::sys::SysError;
 use crate::internal::sys::directory::Directory;
@@ -33,15 +41,15 @@ use std::ffi::{OsStr, OsString};
 use std::fs::{self, File};
 use std::iter;
 use std::mem;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::result::Result as StdResult;
 
 /// Errors arising while orchestrating or executing the registered test cases.
 #[derive(thiserror::Error, Debug)]
 pub enum RunnerError {
-    /// A pass-test compiled and ran but exited unsuccessfully.
+    /// A pass-test compiled and ran but exited unsuccessfully; carries its output.
     #[error("execution of the test case was unsuccessful")]
-    RunFailed,
+    RunFailed(Box<RunOutput>),
     /// A glob entry could not be read.
     #[error(transparent)]
     Glob(#[from] glob::GlobError),
@@ -64,122 +72,170 @@ pub enum RunnerError {
     },
 }
 
-impl RunnerError {
-    /// Whether this error's diagnostics were already written to the terminal.
-    pub(in crate::internal) const fn already_printed(&self) -> bool {
-        matches!(self, Self::RunFailed)
-    }
+/// The captured output of a pass-test that ran but exited unsuccessfully.
+#[derive(Debug)]
+pub struct RunOutput {
+    /// The test binary's captured stdout, with the build stdout prepended.
+    pub stdout: String,
+    /// The test binary's captured stderr.
+    pub stderr: String,
+    /// The preferred rendering of any build warnings.
+    pub warnings: String,
 }
 
 /// Result alias for [`runner`](self) operations.
 pub(in crate::internal) type Result<T> = StdResult<T, RunnerError>;
 
-/// Tally of how a run finished, distinguishing outright failures from newly
-/// created `wip` snapshots.
-struct Report {
-    /// Count of cases that failed.
-    failures: usize,
-    /// Count of cases for which a new `wip` snapshot was written.
-    created_wip: usize,
-}
-
-/// Entry point: expands globs, synthesizes and builds the project, runs every
-/// case, and reports the aggregate outcome.
+/// The reporter-free core: expands globs, synthesizes and builds the project,
+/// and checks every case — invoking `view` as each case resolves and collecting
+/// every case into a [`Report`].
 ///
-/// Returns `Ok(())` only when every case passed and no new snapshots were
-/// created; otherwise a [`RunnerError`] describing the failures or pending `wip`
-/// files.
-#[allow(
-    clippy::single_call_fn,
-    reason = "the runner's orchestration entry point invoked from TestCases::run; the engine's top-level driver"
-)]
-pub(in crate::internal) fn run(registered: &[Test]) -> error::Result<()> {
+/// Writes nothing to the terminal. The outer `Err` is a setup failure (no cases
+/// ran); per-case failures live in each [`CaseReport::outcome`].
+fn compute(
+    registered: &[Test],
+    update: Update,
+    view: &mut dyn FnMut(&CaseReport, bool),
+) -> error::Result<Report> {
     let mut tests = expand_globs(registered);
     filter(&mut tests);
 
+    let mut project = prepare(&tests, update)?;
+    let _lock = Lock::acquire(path!(project.dir / ".lock"))?;
+    write(&mut project)?;
+
+    let show_expected = project.selected.both();
+    let mut cases = Vec::new();
+
+    if tests.is_empty() {
+        return Ok(Report { cases });
+    }
+
+    if project.keep_going == KeepGoing::Yes && !project.selected.has_pass() {
+        run_all(&project, tests, view, show_expected, &mut cases)?;
+    } else {
+        for expanded in tests {
+            let ExpandedTest {
+                name,
+                test: case,
+                error: maybe_error,
+                is_from_glob: _,
+            } = expanded;
+            let outcome = maybe_error.map_or_else(|| case.evaluate(&project, &name), Err);
+            let report = CaseReport {
+                path: case.path,
+                expected: case.expected,
+                outcome,
+            };
+            view(&report, show_expected);
+            cases.push(report);
+        }
+    }
+
+    Ok(Report { cases })
+}
+
+/// Programmatic entry: runs every registered case under the given `update` mode
+/// without writing to the terminal, returning the per-fixture [`Report`].
+///
+/// # Errors
+///
+/// Returns a [`TryBuildError`](crate::TryBuildError) if the throwaway project
+/// cannot be set up. Per-case failures are reported through each
+/// [`CaseReport::outcome`], not this outer `Err`.
+#[allow(
+    clippy::single_call_fn,
+    reason = "the programmatic orchestration entry point invoked from TestCases::try_run, paired with run on this module's surface"
+)]
+pub(in crate::internal) fn try_run(registered: &[Test], update: Update) -> error::Result<Report> {
+    compute(registered, update, &mut |_case, _show_expected| {})
+}
+
+/// Human entry: runs every registered case, streaming per-case progress to the
+/// terminal and returning the aggregate outcome.
+///
+/// # Errors
+///
+/// Returns a [`TryBuildError`](crate::TryBuildError) when any case fails, when a
+/// new `wip` snapshot was created, or when the throwaway project cannot be set
+/// up.
+#[allow(
+    clippy::single_call_fn,
+    reason = "the human orchestration entry point invoked from TestCases::run, paired with try_run on this module's surface"
+)]
+pub(in crate::internal) fn run(registered: &[Test]) -> error::Result<()> {
     let mut reporter = Reporter::new();
 
-    let prepared = (|| -> error::Result<(Project, Lock)> {
-        let mut project = prepare(&mut reporter, &tests)?;
-        let lock = Lock::acquire(path!(project.dir / ".lock"))?;
-        write(&mut project)?;
-        Ok((project, lock))
-    })();
-    let (project, _lock) = match prepared {
-        Ok(pair) => pair,
+    let update = match Update::env() {
+        Ok(update) => update,
+        Err(sys_error) => {
+            let error = sys_error.into();
+            render_setup_fail(&mut reporter, &error);
+            return Err(error);
+        }
+    };
+
+    reporter.emit(format_args!("\n\n"));
+    // Bind before matching so the borrowing render closure is dropped here,
+    // freeing `reporter` for the `Err` arm and the trailing output below.
+    let computed = compute(registered, update, &mut |case, show_expected| {
+        render_case(&mut reporter, case, show_expected);
+    });
+    let report = match computed {
+        Ok(report) => report,
         Err(err) => {
-            reporter.prepare_fail(&err);
+            render_setup_fail(&mut reporter, &err);
             return Err(err);
         }
     };
-
+    if report.cases.is_empty() {
+        render_no_tests(&mut reporter);
+    }
     reporter.emit(format_args!("\n\n"));
 
-    let len = tests.len();
-    let mut report = Report {
-        failures: 0,
-        created_wip: 0,
-    };
+    aggregate(&report)
+}
 
-    if tests.is_empty() {
-        reporter.no_tests_enabled();
-    } else if project.keep_going == KeepGoing::Yes && !project.selected.has_pass() {
-        report = match run_all(&mut reporter, &project, tests) {
-            Ok(failures) => failures,
-            Err(err) => {
-                reporter.test_fail(&err);
-                Report {
-                    failures: len,
-                    created_wip: 0,
-                }
-            }
-        };
-    } else {
-        for case in tests {
-            match case.run(&mut reporter, &project) {
-                Ok(Outcome::Passed) => {}
-                Ok(Outcome::CreatedWip) => {
-                    report.created_wip = report.created_wip.saturating_add(1);
-                }
-                Err(err) => {
-                    report.failures = report.failures.saturating_add(1);
-                    reporter.test_fail(&err);
-                }
-            }
-        }
+/// Collapses a per-fixture [`Report`] into the aggregate `run()` result.
+#[allow(
+    clippy::single_call_fn,
+    reason = "the named aggregate-collapse step of run, kept separate from the streaming render so the count logic reads on its own"
+)]
+fn aggregate(report: &Report) -> error::Result<()> {
+    let total = report.cases.len();
+    let failures = report
+        .cases
+        .iter()
+        .filter(|case| case.outcome.is_err())
+        .count();
+    let created_wip = report
+        .cases
+        .iter()
+        .filter(|case| matches!(case.outcome, Ok(Outcome::CreatedWip(_))))
+        .count();
+
+    if failures > 0 {
+        return Err(RunnerError::Failed { failures, total }.into());
     }
-
-    reporter.emit(format_args!("\n\n"));
-
-    if report.failures > 0 {
-        return Err(RunnerError::Failed {
-            failures: report.failures,
-            total: len,
-        }
-        .into());
-    }
-    if report.created_wip > 0 {
-        return Err(RunnerError::Wip {
-            count: report.created_wip,
-        }
-        .into());
+    if created_wip > 0 {
+        return Err(RunnerError::Wip { count: created_wip }.into());
     }
     Ok(())
 }
 
 /// Synthesizes the throwaway [`Project`] for `tests`: reads cargo metadata and
 /// the crate manifest, discovers path dependencies and the active feature set,
-/// and builds the generated manifest.
+/// and builds the generated manifest under the requested `update` mode.
 #[allow(
     clippy::single_call_fn,
-    reason = "a named orchestration phase — synthesizing the throwaway project — in run's linear pipeline"
+    reason = "a named orchestration phase — synthesizing the throwaway project — in compute's linear pipeline"
 )]
-fn prepare(reporter: &mut Reporter, tests: &[ExpandedTest]) -> error::Result<Project> {
+fn prepare(tests: &[ExpandedTest], update: Update) -> error::Result<Project> {
     let Metadata {
         target_directory: target_dir,
         workspace_root: workspace,
         packages,
-    } = cargo::metadata(reporter)?;
+    } = cargo::metadata()?;
 
     let mut has_pass = false;
     let mut has_compile_fail = false;
@@ -236,7 +292,7 @@ fn prepare(reporter: &mut Reporter, tests: &[ExpandedTest]) -> error::Result<Pro
         source_dir,
         target_dir,
         name: project_name,
-        update: Update::env()?,
+        update,
         selected,
         features,
         workspace,
@@ -250,7 +306,7 @@ fn prepare(reporter: &mut Reporter, tests: &[ExpandedTest]) -> error::Result<Pro
 /// builds the project's dependencies once up front.
 #[allow(
     clippy::single_call_fn,
-    reason = "a named orchestration phase — writing the generated manifest and seeding dependencies — in run's linear pipeline"
+    reason = "a named orchestration phase — writing the generated manifest and seeding dependencies — in compute's linear pipeline"
 )]
 fn write(project: &mut Project) -> error::Result<()> {
     let manifest_toml = toml::to_string(&project.manifest).map_err(ProjectError::TomlSer)?;
@@ -468,21 +524,18 @@ const fn is_optional(dependency: Option<&Dependency>) -> bool {
 
 /// The batched fast path: builds all `compile_fail` bins at once with
 /// `--keep-going`, then checks each against its snapshot from the combined
-/// output.
+/// output, collecting one [`CaseReport`] per case.
 #[allow(
     clippy::single_call_fn,
-    reason = "the batched fast-path phase, deliberately parallel to the per-test path that `run` dispatches between"
+    reason = "the batched fast-path phase, deliberately parallel to the per-test path that `compute` dispatches between"
 )]
 fn run_all(
-    reporter: &mut Reporter,
     project: &Project,
     tests: Vec<ExpandedTest>,
-) -> error::Result<Report> {
-    let mut report = Report {
-        failures: 0,
-        created_wip: 0,
-    };
-
+    view: &mut dyn FnMut(&CaseReport, bool),
+    show_expected: bool,
+    cases: &mut Vec<CaseReport>,
+) -> error::Result<()> {
     let mut path_map = Map::new();
     for expanded in &tests {
         let src_path = CanonicalPath::new(&project.source_dir.join(&expanded.test.path));
@@ -493,56 +546,42 @@ fn run_all(
     let parsed = parse_cargo_json(project, &output.stdout, &path_map);
     let fallback = Stderr::default();
 
-    for mut expanded in tests {
-        let show_expected = false;
-        reporter.begin_test(&expanded.test, show_expected);
-
-        if expanded.error.is_none() {
-            expanded.error = check_exists(&expanded.test.path).err();
-        }
-
-        if expanded.error.is_none() {
-            let src_path = CanonicalPath::new(&project.source_dir.join(&expanded.test.path));
+    for expanded in tests {
+        let ExpandedTest {
+            name,
+            test: case,
+            error: maybe_error,
+            is_from_glob: _,
+        } = expanded;
+        let outcome = if let Some(error) = maybe_error {
+            Err(error)
+        } else if let Err(error) = check_exists(&case.path) {
+            Err(error)
+        } else {
+            let src_path = CanonicalPath::new(&project.source_dir.join(&case.path));
             let this_test = parsed.stderrs.get(&src_path).unwrap_or(&fallback);
-            match expanded
-                .test
-                .check(reporter, project, &expanded.name, this_test, "")
-            {
-                Ok(Outcome::Passed) => {}
-                Ok(Outcome::CreatedWip) => {
-                    report.created_wip = report.created_wip.saturating_add(1);
-                }
-                Err(error) => expanded.error = Some(error),
-            }
-        }
-
-        if let Some(err) = expanded.error {
-            report.failures = report.failures.saturating_add(1);
-            reporter.test_fail(&err);
-        }
+            case.check(project, &name, this_test, "")
+        };
+        let report = CaseReport {
+            path: case.path,
+            expected: case.expected,
+            outcome,
+        };
+        view(&report, show_expected);
+        cases.push(report);
     }
 
-    Ok(report)
-}
-
-/// The result of checking a single test case.
-enum Outcome {
-    /// The case passed (or its snapshot was overwritten in place).
-    Passed,
-    /// No snapshot existed; a new one was written under `wip`.
-    CreatedWip,
+    Ok(())
 }
 
 impl Test {
-    /// Builds and checks one test case on its own (the per-test path).
-    fn run(
-        &self,
-        reporter: &mut Reporter,
-        project: &Project,
-        name: &Name,
-    ) -> error::Result<Outcome> {
-        let show_expected = project.selected.both();
-        reporter.begin_test(self, show_expected);
+    /// Builds and checks one test case on its own (the per-test path),
+    /// producing its [`Outcome`] or the typed failure.
+    #[allow(
+        clippy::single_call_fn,
+        reason = "the per-test build+check step, called once from compute's per-test loop and kept on Test beside its check helpers"
+    )]
+    fn evaluate(&self, project: &Project, name: &Name) -> error::Result<Outcome> {
         check_exists(&self.path)?;
 
         let mut path_map = Map::new();
@@ -553,14 +592,13 @@ impl Test {
         let parsed = parse_cargo_json(project, &output.stdout, &path_map);
         let fallback = Stderr::default();
         let this_test = parsed.stderrs.get(&src_path).unwrap_or(&fallback);
-        self.check(reporter, project, name, this_test, &parsed.stdout)
+        self.check(project, name, this_test, &parsed.stdout)
     }
 
     /// Dispatches to [`check_pass`](Self::check_pass) or
     /// [`check_compile_fail`](Self::check_compile_fail) by the case's expectation.
     fn check(
         &self,
-        reporter: &mut Reporter,
         project: &Project,
         name: &Name,
         result: &Stderr,
@@ -573,7 +611,6 @@ impl Test {
 
         check(
             self,
-            reporter,
             project,
             name,
             result.success,
@@ -583,7 +620,7 @@ impl Test {
     }
 
     /// Checks a pass-test: it must compile, then its binary must run without
-    /// failing.
+    /// failing — carrying the run output either way.
     #[allow(
         clippy::single_call_fn,
         reason = "a check strategy selected by function pointer in `check`, paired with check_compile_fail behind the Expected dispatch"
@@ -594,7 +631,6 @@ impl Test {
     )]
     fn check_pass(
         &self,
-        reporter: &mut Reporter,
         project: &Project,
         name: &Name,
         success: bool,
@@ -603,32 +639,44 @@ impl Test {
     ) -> error::Result<Outcome> {
         let preferred = variations.preferred();
         if !success {
-            reporter.failed_to_build(preferred);
-            return Err(BuildError::CargoFail.into());
+            return Err(BuildError::CompileFailed(Box::new(CompileFailure {
+                diagnostics: preferred.to_owned(),
+            }))
+            .into());
         }
 
         let mut output = cargo::run_test(project, name)?;
         // Prepend the build stdout; `splice` must drop here so the edit applies
         // before `output` is read below.
         drop(output.stdout.splice(..0, build_stdout.bytes()));
-        reporter.output(preferred, &output);
+        let stdout = normalize::trim(&output.stdout);
+        let stderr = normalize::trim(&output.stderr);
+        let warnings = preferred.to_owned();
         if output.status.success() {
-            Ok(Outcome::Passed)
+            Ok(Outcome::Passed(Box::new(PassDetail {
+                stdout,
+                stderr,
+                warnings,
+            })))
         } else {
-            Err(RunnerError::RunFailed.into())
+            Err(RunnerError::RunFailed(Box::new(RunOutput {
+                stdout,
+                stderr,
+                warnings,
+            }))
+            .into())
         }
     }
 
     /// Checks a `compile_fail` test: it must fail to build, and its diagnostics
-    /// must match the saved `.stderr` snapshot — creating or overwriting the
-    /// snapshot per the update mode when none matches.
+    /// must match the saved `.stderr` snapshot — creating, overwriting, or
+    /// reporting a missing/mismatched snapshot per the update mode.
     #[allow(
         clippy::single_call_fn,
         reason = "a check strategy selected by function pointer in `check`, paired with check_pass behind the Expected dispatch"
     )]
     fn check_compile_fail(
         &self,
-        reporter: &mut Reporter,
         project: &Project,
         _name: &Name,
         success: bool,
@@ -638,37 +686,19 @@ impl Test {
         let preferred = variations.preferred();
 
         if success {
-            reporter.should_not_have_compiled();
-            reporter.fail_output(Fail, build_stdout);
-            reporter.warnings(preferred);
-            return Err(DiagnosticsError::ShouldNotHaveCompiled.into());
+            return Err(
+                DiagnosticsError::ShouldNotHaveCompiled(Box::new(UnexpectedSuccess {
+                    stdout: build_stdout.to_owned(),
+                    warnings: preferred.to_owned(),
+                }))
+                .into(),
+            );
         }
 
         let stderr_path = self.path.with_extension("stderr");
 
         if !stderr_path.exists() {
-            let outcome = match project.update {
-                Update::Wip => {
-                    let wip_dir = Path::new("wip");
-                    fs::create_dir_all(wip_dir).map_err(SysError::Io)?;
-                    let gitignore_path = wip_dir.join(".gitignore");
-                    fs::write(gitignore_path, "*\n").map_err(SysError::Io)?;
-                    let stderr_name = stderr_path
-                        .file_name()
-                        .unwrap_or_else(|| OsStr::new("test.stderr"));
-                    let wip_path = wip_dir.join(stderr_name);
-                    reporter.write_stderr_wip(&wip_path, &stderr_path, preferred);
-                    fs::write(wip_path, preferred).map_err(DiagnosticsError::WriteStderr)?;
-                    Outcome::CreatedWip
-                }
-                Update::Overwrite => {
-                    reporter.overwrite_stderr(&stderr_path, preferred);
-                    fs::write(stderr_path, preferred).map_err(DiagnosticsError::WriteStderr)?;
-                    Outcome::Passed
-                }
-            };
-            reporter.fail_output(Warn, build_stdout);
-            return Ok(outcome);
+            return missing_snapshot(project.update, stderr_path, preferred);
         }
 
         let expected = fs::read_to_string(&stderr_path)
@@ -676,20 +706,68 @@ impl Test {
             .replace("\r\n", "\n");
 
         if variations.any(|stderr| expected == stderr) {
-            reporter.ok();
-            return Ok(Outcome::Passed);
+            return Ok(Outcome::Passed(Box::new(PassDetail {
+                stdout: String::new(),
+                stderr: String::new(),
+                warnings: String::new(),
+            })));
         }
 
         match project.update {
-            Update::Wip => {
-                reporter.mismatch(&expected, preferred);
-                Err(DiagnosticsError::Mismatch.into())
+            Update::Verify | Update::Wip => {
+                Err(DiagnosticsError::Mismatch(Box::new(MismatchDetail {
+                    expected,
+                    actual: preferred.to_owned(),
+                }))
+                .into())
             }
             Update::Overwrite => {
-                reporter.overwrite_stderr(&stderr_path, preferred);
-                fs::write(stderr_path, preferred).map_err(DiagnosticsError::WriteStderr)?;
-                Ok(Outcome::Passed)
+                fs::write(&stderr_path, preferred).map_err(DiagnosticsError::WriteStderr)?;
+                Ok(Outcome::Overwrote(Box::new(OverwriteDetail {
+                    stderr_path,
+                    stderr: preferred.to_owned(),
+                })))
             }
+        }
+    }
+}
+
+/// Reconciles a missing `.stderr` snapshot per the update mode: failing under
+/// [`Verify`](Update::Verify), writing a `wip` copy under [`Wip`](Update::Wip),
+/// or creating it in place under [`Overwrite`](Update::Overwrite).
+#[allow(
+    clippy::single_call_fn,
+    reason = "the missing-snapshot reconciliation lifted out of check_compile_fail so that function stays within the cognitive-complexity budget"
+)]
+fn missing_snapshot(
+    update: Update,
+    stderr_path: PathBuf,
+    preferred: &str,
+) -> error::Result<Outcome> {
+    match update {
+        Update::Verify => Err(DiagnosticsError::SnapshotMissing { path: stderr_path }.into()),
+        Update::Wip => {
+            let wip_dir = Path::new("wip");
+            fs::create_dir_all(wip_dir).map_err(SysError::Io)?;
+            let gitignore_path = wip_dir.join(".gitignore");
+            fs::write(gitignore_path, "*\n").map_err(SysError::Io)?;
+            let stderr_name = stderr_path
+                .file_name()
+                .unwrap_or_else(|| OsStr::new("test.stderr"));
+            let wip_path = wip_dir.join(stderr_name);
+            fs::write(&wip_path, preferred).map_err(DiagnosticsError::WriteStderr)?;
+            Ok(Outcome::CreatedWip(Box::new(WipDetail {
+                wip_path,
+                stderr_path,
+                stderr: preferred.to_owned(),
+            })))
+        }
+        Update::Overwrite => {
+            fs::write(&stderr_path, preferred).map_err(DiagnosticsError::WriteStderr)?;
+            Ok(Outcome::Overwrote(Box::new(OverwriteDetail {
+                stderr_path,
+                stderr: preferred.to_owned(),
+            })))
         }
     }
 }
@@ -702,21 +780,6 @@ fn check_exists(path: &Path) -> error::Result<()> {
     match File::open(path) {
         Ok(_) => Ok(()),
         Err(err) => Err(SysError::Open(path.to_owned(), err).into()),
-    }
-}
-
-impl ExpandedTest {
-    /// Runs an expanded case, short-circuiting to the error captured during
-    /// glob expansion if one occurred.
-    fn run(self, reporter: &mut Reporter, project: &Project) -> error::Result<Outcome> {
-        match self.error {
-            None => self.test.run(reporter, project, &self.name),
-            Some(error) => {
-                let show_expected = false;
-                reporter.begin_test(&self.test, show_expected);
-                Err(error)
-            }
-        }
     }
 }
 
@@ -737,7 +800,7 @@ impl ExpandedTest {
 )]
 #[allow(
     clippy::single_call_fn,
-    reason = "the command-line filter phase, named distinctly from glob expansion in run's pipeline"
+    reason = "the command-line filter phase, named distinctly from glob expansion in compute's pipeline"
 )]
 fn filter(tests: &mut Vec<ExpandedTest>) {
     let filters = env::args_os()

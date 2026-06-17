@@ -5,7 +5,9 @@ use std::fmt::{self, Debug};
 use std::path::{Path, PathBuf};
 
 use crate::internal::model::{Expected, Test};
+use crate::internal::outcome::Report;
 use crate::internal::runner;
+use crate::internal::sys::env::Update;
 
 /// A collection of ui test cases to compile and check.
 ///
@@ -50,6 +52,22 @@ impl TestCases {
     /// harness cannot set up the throwaway project used to build the cases.
     pub fn run(&self) -> Result<(), crate::TryBuildError> {
         runner::run(&self.tests)
+    }
+
+    /// Compiles and checks every registered case without writing to the
+    /// terminal, returning a per-fixture [`Report`].
+    ///
+    /// Unlike [`run`](Self::run), the snapshot reconciliation mode is given
+    /// explicitly via `update` instead of read from the `TRYBUILD` environment
+    /// variable, and nothing is printed — every outcome is returned as data.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TryBuildError`](crate::TryBuildError) if the throwaway project
+    /// used to build the cases cannot be set up. Per-case failures are reported
+    /// through each [`CaseReport`](crate::CaseReport)'s outcome, not this `Err`.
+    pub fn try_run(&self, update: Update) -> Result<Report, crate::TryBuildError> {
+        runner::try_run(&self.tests, update)
     }
 
     /// Appends one registration to the set.

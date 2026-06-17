@@ -16,22 +16,43 @@ pub enum BuildError {
     /// Failed to spawn or execute the `cargo` process.
     #[error("failed to execute cargo: {0}")]
     Cargo(#[source] io::Error),
-    /// Cargo exited unsuccessfully; its diagnostics were already rendered.
-    #[error("cargo reported an error")]
-    CargoFail,
-    /// Failed to deserialize `cargo metadata` output.
-    #[error("failed to read cargo metadata: {0}")]
-    Metadata(#[from] serde_json::Error),
+    /// The one-time dependency build of the generated project failed; carries
+    /// the build's captured output.
+    #[error("cargo failed to build the generated project's dependencies")]
+    DependencyBuild(Box<BuildOutput>),
+    /// A registered pass-test failed to compile; carries its normalized
+    /// compiler diagnostics.
+    #[error("expected the test case to compile, but it failed to build")]
+    CompileFailed(Box<CompileFailure>),
+    /// Failed to deserialize `cargo metadata` output; carries cargo's stderr.
+    #[error("failed to read cargo metadata: {}", .0.source)]
+    Metadata(Box<MetadataFailure>),
     /// Could not determine the name of the project directory.
     #[error("failed to determine name of project dir")]
     ProjectDir,
 }
 
-impl BuildError {
-    /// Whether this error's diagnostics were already written to the terminal.
-    pub(in crate::internal) const fn already_printed(&self) -> bool {
-        matches!(self, Self::CargoFail)
-    }
+/// The captured output of a failed dependency build of the generated project.
+#[derive(Debug)]
+pub struct BuildOutput {
+    /// Cargo's captured output from the failed dependency build.
+    pub output: String,
+}
+
+/// The normalized compiler diagnostics from a pass-test that failed to compile.
+#[derive(Debug)]
+pub struct CompileFailure {
+    /// The preferred (most-normalized) rendering of the compiler diagnostics.
+    pub diagnostics: String,
+}
+
+/// The cause and captured cargo stderr of a `cargo metadata` parse failure.
+#[derive(Debug)]
+pub struct MetadataFailure {
+    /// The deserialization error reported by `serde_json`.
+    pub source: serde_json::Error,
+    /// Cargo's captured stderr, retained so the parse failure is diagnosable.
+    pub stderr: String,
 }
 
 /// Result alias for [`build`](self) operations.

@@ -5,13 +5,20 @@ use crate::internal::sys::{Result, SysError};
 use std::env;
 
 /// How the runner reconciles a `compile_fail` test with its `.stderr` snapshot.
-#[derive(PartialEq, Default, Debug)]
-pub(in crate::internal) enum Update {
+///
+/// [`run`](crate::TestCases::run) reads this from the `TRYBUILD` environment
+/// variable; [`try_run`](crate::TestCases::try_run) takes it as an explicit
+/// argument so a programmatic caller controls it without touching the
+/// environment.
+#[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]
+pub enum Update {
+    /// Fail when a snapshot is missing or mismatched, writing nothing.
+    Verify,
     /// Default: write a new snapshot under `wip` (or report a mismatch) without
     /// touching the saved file.
     #[default]
     Wip,
-    /// `TRYBUILD=overwrite`: write the snapshot in place.
+    /// Write the snapshot in place (`TRYBUILD=overwrite`).
     Overwrite,
 }
 
@@ -32,6 +39,7 @@ impl Update {
         };
 
         match var.as_os_str().to_str() {
+            Some("verify") => Ok(Self::Verify),
             Some("wip") => Ok(Self::Wip),
             Some("overwrite") => Ok(Self::Overwrite),
             _ => Err(SysError::UpdateVar(var)),

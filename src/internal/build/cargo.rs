@@ -1,13 +1,12 @@
 //! Constructing and invoking `cargo` subprocesses: building or checking the
 //! synthesized test binaries, running pass-tests, and reading `cargo metadata`.
 
-use crate::internal::build::{BuildError, Result};
+use crate::internal::build::{BuildError, BuildOutput, MetadataFailure, Result};
 use crate::internal::error;
 use crate::internal::model::Name;
 use crate::internal::project::KeepGoing;
 use crate::internal::project::Project;
 use crate::internal::project::rustflags;
-use crate::internal::report::reporter::Reporter;
 use crate::internal::sys::SysError;
 use crate::internal::sys::directory::Directory;
 use serde_derive::Deserialize;
@@ -138,7 +137,8 @@ pub(in crate::internal) fn build_dependencies(project: &mut Project) -> Result<(
         Err(err) => {
             if err.kind() == io::ErrorKind::NotFound {
                 // Best-effort: a failure surfaces from the build invocation below.
-                let _generated = cargo(project).arg("generate-lockfile").status();
+                // Captured (not inherited) so `try_run` writes nothing to the terminal.
+                let _generated = cargo(project).arg("generate-lockfile").output();
             }
         }
     }
@@ -155,9 +155,13 @@ pub(in crate::internal) fn build_dependencies(project: &mut Project) -> Result<(
         .arg(&project.name)
         .args(features(project));
 
-    let status = command.status().map_err(BuildError::Cargo)?;
-    if !status.success() {
-        return Err(BuildError::CargoFail);
+    // Captured rather than inherited so the typed core stays terminal-free; a
+    // failure carries cargo's output as data instead of leaking it.
+    let output = command.output().map_err(BuildError::Cargo)?;
+    if !output.status.success() {
+        return Err(BuildError::DependencyBuild(Box::new(BuildOutput {
+            output: String::from_utf8_lossy(&output.stderr).into_owned(),
+        })));
     }
 
     // Check if this Cargo contains https://github.com/rust-lang/cargo/pull/10383
@@ -269,12 +273,12 @@ pub(in crate::internal) fn run_test(project: &Project, name: &Name) -> Result<Ou
 }
 
 /// Runs `cargo metadata --no-deps` and deserializes the [`Metadata`] trybuild
-/// needs; cargo's stderr is forwarded to `reporter` if deserialization fails.
+/// needs; cargo's stderr is captured into the error if deserialization fails.
 #[allow(
     clippy::single_call_fn,
     reason = "the `cargo metadata` entry point the orchestrator calls to discover the workspace, a named domain boundary"
 )]
-pub(in crate::internal) fn metadata(reporter: &mut Reporter) -> Result<Metadata> {
+pub(in crate::internal) fn metadata() -> Result<Metadata> {
     let output = raw_cargo()
         .arg("metadata")
         .arg("--no-deps")
@@ -282,9 +286,11 @@ pub(in crate::internal) fn metadata(reporter: &mut Reporter) -> Result<Metadata>
         .output()
         .map_err(BuildError::Cargo)?;
 
-    serde_json::from_slice(&output.stdout).map_err(|err| {
-        reporter.emit(format_args!("{}", String::from_utf8_lossy(&output.stderr)));
-        BuildError::Metadata(err)
+    serde_json::from_slice(&output.stdout).map_err(|source| {
+        BuildError::Metadata(Box::new(MetadataFailure {
+            source,
+            stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+        }))
     })
 }
 

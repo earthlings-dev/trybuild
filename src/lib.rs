@@ -105,7 +105,11 @@
 //!
 //! # Details
 //!
-//! That's the entire API.
+//! That is the entire default API. For a panic-free, terminal-free alternative
+//! to [`TestCases::run`] — for example when wrapping trybuild in another
+//! test-support layer — [`TestCases::try_run`] takes the snapshot mode
+//! explicitly and returns a typed [`Report`] of every case's [`Outcome`] (or its
+//! [`TryBuildError`]) as data, writing nothing to the terminal.
 //!
 //! <br>
 //!
@@ -240,4 +244,9 @@
 
 mod internal;
 
-pub use crate::internal::{TestCases, TryBuildError};
+pub use crate::internal::{
+    BuildError, BuildOutput, CaseReport, CompileFailure, DiagnosticsError, Expected,
+    MetadataFailure, MismatchDetail, Outcome, OverwriteDetail, PassDetail, ProjectError, Report,
+    RunOutput, RunnerError, SysError, TestCases, TryBuildError, UnexpectedSuccess, Update,
+    WipDetail,
+};

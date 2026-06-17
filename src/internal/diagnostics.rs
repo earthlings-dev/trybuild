@@ -13,16 +13,25 @@ pub(in crate::internal) mod normalize;
 mod snapshots;
 
 use std::io;
+use std::path::PathBuf;
 
 /// Errors arising while comparing compiler output against a saved snapshot.
 #[derive(thiserror::Error, Debug)]
 pub enum DiagnosticsError {
-    /// The compiler output did not match any saved variation of the snapshot.
+    /// The compiler output did not match any saved variation of the snapshot;
+    /// carries the expected and actual renderings.
     #[error("compiler error does not match expected error")]
-    Mismatch,
-    /// A `compile_fail` test compiled successfully.
+    Mismatch(Box<MismatchDetail>),
+    /// A `compile_fail` test compiled successfully; carries the build output.
     #[error("expected test case to fail to compile, but it succeeded")]
-    ShouldNotHaveCompiled,
+    ShouldNotHaveCompiled(Box<UnexpectedSuccess>),
+    /// No `.stderr` snapshot exists and the update mode is
+    /// [`Verify`](crate::Update::Verify), so none was written.
+    #[error("no snapshot exists for {}", .path.display())]
+    SnapshotMissing {
+        /// The `.stderr` snapshot path that was expected to exist.
+        path: PathBuf,
+    },
     /// Failed to read the expected `.stderr` file.
     #[error("failed to read stderr file: {0}")]
     ReadStderr(#[source] io::Error),
@@ -31,9 +40,20 @@ pub enum DiagnosticsError {
     WriteStderr(#[source] io::Error),
 }
 
-impl DiagnosticsError {
-    /// Whether this error's diagnostics were already written to the terminal.
-    pub(in crate::internal) const fn already_printed(&self) -> bool {
-        matches!(self, Self::Mismatch | Self::ShouldNotHaveCompiled)
-    }
+/// The expected and actual diagnostic renderings of a snapshot mismatch.
+#[derive(Debug)]
+pub struct MismatchDetail {
+    /// The committed `.stderr` snapshot contents.
+    pub expected: String,
+    /// The preferred (most-normalized) rendering of the actual diagnostics.
+    pub actual: String,
+}
+
+/// The captured output of a `compile_fail` case that unexpectedly compiled.
+#[derive(Debug)]
+pub struct UnexpectedSuccess {
+    /// Cargo's captured stdout from the unexpectedly-successful build.
+    pub stdout: String,
+    /// The preferred rendering of any warnings the build emitted.
+    pub warnings: String,
 }

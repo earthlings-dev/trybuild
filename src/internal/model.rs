@@ -18,9 +18,9 @@ pub(in crate::internal) struct Test {
     pub(in crate::internal) expected: Expected,
 }
 
-/// The expected compilation outcome of a [`Test`].
+/// The expected compilation outcome of a registered test case.
 #[derive(Copy, Clone, Debug)]
-pub(in crate::internal) enum Expected {
+pub enum Expected {
     /// The file must compile and its binary must run without panicking.
     Pass,
     /// The file must fail to compile, matching its `.stderr` snapshot.

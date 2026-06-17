@@ -24,7 +24,11 @@ mod internal {
     // traverse the non-existent `fuzz_targets/internal/…` directories that inline
     // modules otherwise imply, and fail.
     #[path = "model.rs"]
-    #[allow(dead_code, reason = "only PathDependency is used by the fuzz target")]
+    #[allow(
+        dead_code,
+        unreachable_pub,
+        reason = "the fuzz target uses only PathDependency from this module, so its other items look dead; and `Expected` is `pub` for the library's public API (re-exported at the crate root) yet unreachable in this white-box fuzz binary, which has no public API"
+    )]
     pub(in crate::internal) mod model;
 
     /// Host-system types — only `Directory` is exercised here.

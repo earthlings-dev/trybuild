@@ -32,18 +32,5 @@ pub enum TryBuildError {
     Runner(#[from] RunnerError),
 }
 
-impl TryBuildError {
-    /// Whether this error's diagnostics were already written to the terminal,
-    /// so the orchestrator should not print them again.
-    pub(in crate::internal) const fn already_printed(&self) -> bool {
-        match *self {
-            Self::Build(ref err) => err.already_printed(),
-            Self::Diagnostics(ref err) => err.already_printed(),
-            Self::Runner(ref err) => err.already_printed(),
-            Self::Sys(_) | Self::Project(_) => false,
-        }
-    }
-}
-
 /// Result alias for the crate's composed [`TryBuildError`].
 pub(in crate::internal) type Result<T> = StdResult<T, TryBuildError>;

@@ -1,260 +1,299 @@
-//! High-level, semantic test-progress messages, rendered through a
-//! [`Reporter`]. These are an extension trait rather than inherent methods so
-//! the primitive [`Reporter`] impl can live in its own module.
+//! Rendering a typed [`CaseReport`] (and setup failures) to the terminal through
+//! a [`Reporter`].
+//!
+//! This is the human-facing *view* over the runner's typed result: the runner
+//! computes outcomes as data and never prints; [`run`](crate::TestCases::run)
+//! drives these functions per case to reproduce trybuild's progress output,
+//! while [`try_run`](crate::TestCases::try_run) skips them entirely.
 
 use crate::TryBuildError;
-use crate::internal::diagnostics::normalize;
-use crate::internal::model::{Expected, Test};
+use crate::internal::build::BuildError;
+use crate::internal::diagnostics::{DiagnosticsError, UnexpectedSuccess};
+use crate::internal::model::Expected;
+use crate::internal::outcome::{CaseReport, Outcome, OverwriteDetail, PassDetail, WipDetail};
 use crate::internal::report::diff::{Diff, Render};
 use crate::internal::report::reporter::Reporter;
+use crate::internal::runner::{RunOutput, RunnerError};
 use std::env;
-use std::path::Path;
-use std::process::Output;
 use termcolor::Color::{self, Blue, Green, Red, Yellow};
 
-/// Whether [`Messages::fail_output`] renders a failure or a warning.
-pub(in crate::internal) enum Level {
-    /// Render the output as a hard failure.
-    Fail,
-    /// Render the output as a non-fatal warning.
-    Warn,
+/// Renders one resolved case: the `test <name> ...` prefix, then its outcome.
+#[allow(
+    clippy::single_call_fn,
+    reason = "the per-case render entry point invoked from run's streaming view closure"
+)]
+pub(in crate::internal) fn render_case(
+    reporter: &mut Reporter,
+    case: &CaseReport,
+    show_expected: bool,
+) {
+    let display_name = case.path.as_os_str().to_string_lossy();
+
+    reporter.emit(format_args!("test "));
+    reporter.bold();
+    reporter.emit(format_args!("{display_name}"));
+    reporter.reset();
+
+    if show_expected {
+        match case.expected {
+            Expected::Pass => reporter.emit(format_args!(" [should pass]")),
+            Expected::CompileFail => reporter.emit(format_args!(" [should fail to compile]")),
+        }
+    }
+
+    reporter.emit(format_args!(" ... "));
+
+    match case.outcome {
+        Ok(Outcome::Passed(ref detail)) => render_pass(reporter, detail),
+        Ok(Outcome::CreatedWip(ref detail)) => render_wip(reporter, detail),
+        Ok(Outcome::Overwrote(ref detail)) => render_overwrite(reporter, detail),
+        Err(ref error) => render_error(reporter, error),
+    }
 }
 
-pub(in crate::internal) use self::Level::*;
-
-/// Semantic test-progress messages layered over a [`Reporter`].
-pub(in crate::internal) trait Messages {
-    /// Reports a setup failure that aborts the whole run.
-    fn prepare_fail(&mut self, err: &TryBuildError);
-    /// Reports the failure of a single test case.
-    fn test_fail(&mut self, err: &TryBuildError);
-    /// Reports that no tests were enabled.
-    fn no_tests_enabled(&mut self);
-    /// Reports that a test case passed.
-    fn ok(&mut self);
-    /// Prints the `test <name> ...` prefix for a case about to run.
-    fn begin_test(&mut self, case: &Test, show_expected: bool);
-    /// Reports that a `compile_fail` case failed to build as a hard error.
-    fn failed_to_build(&mut self, stderr: &str);
-    /// Reports that a `compile_fail` case unexpectedly compiled.
-    fn should_not_have_compiled(&mut self);
-    /// Reports that a new `wip` snapshot was written.
-    fn write_stderr_wip(&mut self, wip_path: &Path, stderr_path: &Path, stderr: &str);
-    /// Reports that a snapshot was overwritten in place.
-    fn overwrite_stderr(&mut self, stderr_path: &Path, stderr: &str);
-    /// Reports a mismatch between expected and actual compiler output.
-    fn mismatch(&mut self, expected: &str, actual: &str);
-    /// Reports the runtime output of a pass-test.
-    fn output(&mut self, warnings: &str, output: &Output);
-    /// Renders captured stdout for a failing or warning case.
-    fn fail_output(&mut self, level: Level, stdout: &str);
-    /// Renders captured warnings, if any.
-    fn warnings(&mut self, warnings: &str);
+/// Reports a setup failure that aborts the whole run.
+pub(in crate::internal) fn render_setup_fail(reporter: &mut Reporter, error: &TryBuildError) {
+    reporter.bold_color(Red);
+    reporter.emit(format_args!("ERROR"));
+    reporter.reset();
+    reporter.emitln(format_args!(": {error}"));
+    reporter.emitln(format_args!(""));
 }
 
-impl Messages for Reporter {
-    fn prepare_fail(&mut self, err: &TryBuildError) {
-        if err.already_printed() {
-            return;
+/// Reports that no trybuild tests were enabled.
+#[allow(
+    clippy::single_call_fn,
+    reason = "the no-tests-enabled render, kept beside the other case renders rather than inlined into run"
+)]
+pub(in crate::internal) fn render_no_tests(reporter: &mut Reporter) {
+    reporter.color(Yellow);
+    reporter.emitln(format_args!("There are no trybuild tests enabled yet."));
+    reporter.reset();
+}
+
+/// Renders a passing case: `ok`, plus any captured run output of a pass-test.
+#[allow(
+    clippy::single_call_fn,
+    reason = "a named outcome render dispatched from render_case, paired with render_wip/render_overwrite"
+)]
+fn render_pass(reporter: &mut Reporter, detail: &PassDetail) {
+    let has_output = !detail.stdout.is_empty() || !detail.stderr.is_empty();
+
+    reporter.color(Green);
+    reporter.emitln(format_args!("ok"));
+    reporter.reset();
+    if has_output || !detail.warnings.is_empty() {
+        reporter.emitln(format_args!(""));
+    }
+
+    warnings(reporter, &detail.warnings);
+
+    for (name, content) in [("STDOUT", &detail.stdout), ("STDERR", &detail.stderr)] {
+        if !content.is_empty() {
+            reporter.bold_color(Yellow);
+            reporter.emitln(format_args!("{name}:"));
+            snippet(reporter, Yellow, content);
+            reporter.emitln(format_args!(""));
         }
+    }
+}
 
-        self.bold_color(Red);
-        self.emit(format_args!("ERROR"));
-        self.reset();
-        self.emitln(format_args!(": {err}"));
-        self.emitln(format_args!(""));
+/// Renders a newly created `wip` snapshot and where to move it.
+#[allow(
+    clippy::single_call_fn,
+    reason = "a named outcome render dispatched from render_case, paired with render_pass/render_overwrite"
+)]
+fn render_wip(reporter: &mut Reporter, detail: &WipDetail) {
+    let wip_display = detail.wip_path.to_string_lossy();
+    let stderr_display = detail.stderr_path.to_string_lossy();
+
+    reporter.bold_color(Yellow);
+    reporter.emitln(format_args!("wip"));
+    reporter.emitln(format_args!(""));
+    reporter.emit(format_args!("NOTE"));
+    reporter.reset();
+    reporter.emitln(format_args!(
+        ": writing the following output to `{wip_display}`."
+    ));
+    reporter.emitln(format_args!(
+        "Move this file to `{stderr_display}` to accept it as correct."
+    ));
+    snippet(reporter, Yellow, &detail.stderr);
+    reporter.emitln(format_args!(""));
+}
+
+/// Renders a snapshot overwritten in place.
+#[allow(
+    clippy::single_call_fn,
+    reason = "a named outcome render dispatched from render_case, paired with render_pass/render_wip"
+)]
+fn render_overwrite(reporter: &mut Reporter, detail: &OverwriteDetail) {
+    let stderr_display = detail.stderr_path.to_string_lossy();
+
+    reporter.bold_color(Yellow);
+    reporter.emitln(format_args!("wip"));
+    reporter.emitln(format_args!(""));
+    reporter.emit(format_args!("NOTE"));
+    reporter.reset();
+    reporter.emitln(format_args!(
+        ": writing the following output to `{stderr_display}`."
+    ));
+    snippet(reporter, Yellow, &detail.stderr);
+    reporter.emitln(format_args!(""));
+}
+
+/// Renders a failing case by dispatching on the carried diagnostic data, falling
+/// back to the error's `Display` for failures without a richer rendering.
+#[allow(
+    clippy::single_call_fn,
+    reason = "the failing-case render dispatcher invoked from render_case; an if-let chain so it need not match the whole non_exhaustive taxonomy"
+)]
+fn render_error(reporter: &mut Reporter, error: &TryBuildError) {
+    if let TryBuildError::Diagnostics(DiagnosticsError::Mismatch(ref detail)) = *error {
+        mismatch(reporter, &detail.expected, &detail.actual);
+    } else if let TryBuildError::Diagnostics(DiagnosticsError::ShouldNotHaveCompiled(ref detail)) =
+        *error
+    {
+        compiled_unexpectedly(reporter, detail);
+    } else if let TryBuildError::Build(BuildError::CompileFailed(ref detail)) = *error {
+        failed_to_build(reporter, &detail.diagnostics);
+    } else if let TryBuildError::Runner(RunnerError::RunFailed(ref detail)) = *error {
+        run_failed(reporter, detail);
+    } else {
+        error_line(reporter, error);
+    }
+}
+
+/// Renders the expected-vs-actual diff of a snapshot mismatch.
+#[allow(
+    clippy::single_call_fn,
+    reason = "the mismatch render, the most involved failing-case rendering, kept on its own off render_error's dispatch"
+)]
+fn mismatch(reporter: &mut Reporter, expected: &str, actual: &str) {
+    reporter.bold_color(Red);
+    reporter.emitln(format_args!("mismatch"));
+    reporter.reset();
+    reporter.emitln(format_args!(""));
+    let diff = if env::var_os("TERM").is_none_or(|term| term == "dumb") {
+        // No diff in a dumb terminal or when TERM is unset.
+        None
+    } else {
+        Diff::compute(expected, actual)
+    };
+    reporter.bold_color(Blue);
+    reporter.emitln(format_args!("EXPECTED:"));
+    snippet_diff(reporter, Blue, expected, diff.as_ref());
+    reporter.emitln(format_args!(""));
+    reporter.bold_color(Red);
+    reporter.emitln(format_args!("ACTUAL OUTPUT:"));
+    snippet_diff(reporter, Red, actual, diff.as_ref());
+    reporter.emit(format_args!("note: If the "));
+    reporter.color(Red);
+    reporter.emit(format_args!("actual output"));
+    reporter.reset();
+    reporter.emitln(format_args!(
+        " is the correct output you can bless it by rerunning"
+    ));
+    reporter.emitln(format_args!(
+        "      your test with the environment variable TRYBUILD=overwrite"
+    ));
+    reporter.emitln(format_args!(""));
+}
+
+/// Renders a `compile_fail` case that unexpectedly compiled, with its output.
+#[allow(
+    clippy::single_call_fn,
+    reason = "a named failing-case render dispatched from render_error"
+)]
+fn compiled_unexpectedly(reporter: &mut Reporter, detail: &UnexpectedSuccess) {
+    reporter.bold_color(Red);
+    reporter.emitln(format_args!("error"));
+    reporter.color(Red);
+    reporter.emitln(format_args!(
+        "Expected test case to fail to compile, but it succeeded."
+    ));
+    reporter.reset();
+    reporter.emitln(format_args!(""));
+
+    if !detail.stdout.is_empty() {
+        reporter.bold_color(Red);
+        reporter.emitln(format_args!("STDOUT:"));
+        snippet(reporter, Red, &detail.stdout);
+        reporter.emitln(format_args!(""));
     }
 
-    fn test_fail(&mut self, err: &TryBuildError) {
-        if err.already_printed() {
-            return;
-        }
+    warnings(reporter, &detail.warnings);
+}
 
-        self.bold_color(Red);
-        self.emitln(format_args!("error"));
-        self.color(Red);
-        self.emitln(format_args!("{err}"));
-        self.reset();
-        self.emitln(format_args!(""));
-    }
+/// Renders a pass-test that failed to build.
+#[allow(
+    clippy::single_call_fn,
+    reason = "a named failing-case render dispatched from render_error"
+)]
+fn failed_to_build(reporter: &mut Reporter, stderr: &str) {
+    reporter.bold_color(Red);
+    reporter.emitln(format_args!("error"));
+    snippet(reporter, Red, stderr);
+    reporter.emitln(format_args!(""));
+}
 
-    fn no_tests_enabled(&mut self) {
-        self.color(Yellow);
-        self.emitln(format_args!("There are no trybuild tests enabled yet."));
-        self.reset();
-    }
+/// Renders a pass-test that compiled but failed at runtime, with its output.
+#[allow(
+    clippy::single_call_fn,
+    reason = "a named failing-case render dispatched from render_error"
+)]
+fn run_failed(reporter: &mut Reporter, detail: &RunOutput) {
+    let has_output = !detail.stdout.is_empty() || !detail.stderr.is_empty();
 
-    fn ok(&mut self) {
-        self.color(Green);
-        self.emitln(format_args!("ok"));
-        self.reset();
-    }
-
-    fn begin_test(&mut self, case: &Test, show_expected: bool) {
-        let display_name = case.path.as_os_str().to_string_lossy();
-
-        self.emit(format_args!("test "));
-        self.bold();
-        self.emit(format_args!("{display_name}"));
-        self.reset();
-
-        if show_expected {
-            match case.expected {
-                Expected::Pass => self.emit(format_args!(" [should pass]")),
-                Expected::CompileFail => self.emit(format_args!(" [should fail to compile]")),
-            }
-        }
-
-        self.emit(format_args!(" ... "));
-    }
-
-    fn failed_to_build(&mut self, stderr: &str) {
-        self.bold_color(Red);
-        self.emitln(format_args!("error"));
-        snippet(self, Red, stderr);
-        self.emitln(format_args!(""));
-    }
-
-    fn should_not_have_compiled(&mut self) {
-        self.bold_color(Red);
-        self.emitln(format_args!("error"));
-        self.color(Red);
-        self.emitln(format_args!(
-            "Expected test case to fail to compile, but it succeeded."
+    reporter.bold_color(Red);
+    reporter.emitln(format_args!("error"));
+    reporter.color(Red);
+    if has_output {
+        reporter.emitln(format_args!("Test case failed at runtime."));
+    } else {
+        reporter.emitln(format_args!(
+            "Execution of the test case was unsuccessful but there was no output."
         ));
-        self.reset();
-        self.emitln(format_args!(""));
     }
+    reporter.reset();
+    reporter.emitln(format_args!(""));
 
-    fn write_stderr_wip(&mut self, wip_path: &Path, stderr_path: &Path, stderr: &str) {
-        let wip_display = wip_path.to_string_lossy();
-        let stderr_display = stderr_path.to_string_lossy();
+    warnings(reporter, &detail.warnings);
 
-        self.bold_color(Yellow);
-        self.emitln(format_args!("wip"));
-        self.emitln(format_args!(""));
-        self.emit(format_args!("NOTE"));
-        self.reset();
-        self.emitln(format_args!(
-            ": writing the following output to `{wip_display}`."
-        ));
-        self.emitln(format_args!(
-            "Move this file to `{stderr_display}` to accept it as correct."
-        ));
-        snippet(self, Yellow, stderr);
-        self.emitln(format_args!(""));
-    }
-
-    fn overwrite_stderr(&mut self, stderr_path: &Path, stderr: &str) {
-        let stderr_display = stderr_path.to_string_lossy();
-
-        self.bold_color(Yellow);
-        self.emitln(format_args!("wip"));
-        self.emitln(format_args!(""));
-        self.emit(format_args!("NOTE"));
-        self.reset();
-        self.emitln(format_args!(
-            ": writing the following output to `{stderr_display}`."
-        ));
-        snippet(self, Yellow, stderr);
-        self.emitln(format_args!(""));
-    }
-
-    fn mismatch(&mut self, expected: &str, actual: &str) {
-        self.bold_color(Red);
-        self.emitln(format_args!("mismatch"));
-        self.reset();
-        self.emitln(format_args!(""));
-        let diff = if env::var_os("TERM").is_none_or(|term| term == "dumb") {
-            // No diff in dumb terminal or when TERM is unset.
-            None
-        } else {
-            Diff::compute(expected, actual)
-        };
-        self.bold_color(Blue);
-        self.emitln(format_args!("EXPECTED:"));
-        snippet_diff(self, Blue, expected, diff.as_ref());
-        self.emitln(format_args!(""));
-        self.bold_color(Red);
-        self.emitln(format_args!("ACTUAL OUTPUT:"));
-        snippet_diff(self, Red, actual, diff.as_ref());
-        self.emit(format_args!("note: If the "));
-        self.color(Red);
-        self.emit(format_args!("actual output"));
-        self.reset();
-        self.emitln(format_args!(
-            " is the correct output you can bless it by rerunning"
-        ));
-        self.emitln(format_args!(
-            "      your test with the environment variable TRYBUILD=overwrite"
-        ));
-        self.emitln(format_args!(""));
-    }
-
-    fn output(&mut self, warnings: &str, output: &Output) {
-        let success = output.status.success();
-        let stdout = normalize::trim(&output.stdout);
-        let stderr = normalize::trim(&output.stderr);
-        let has_output = !stdout.is_empty() || !stderr.is_empty();
-
-        if success {
-            self.ok();
-            if has_output || !warnings.is_empty() {
-                self.emitln(format_args!(""));
-            }
-        } else {
-            self.bold_color(Red);
-            self.emitln(format_args!("error"));
-            self.color(Red);
-            if has_output {
-                self.emitln(format_args!("Test case failed at runtime."));
-            } else {
-                self.emitln(format_args!(
-                    "Execution of the test case was unsuccessful but there was no output."
-                ));
-            }
-            self.reset();
-            self.emitln(format_args!(""));
-        }
-
-        self.warnings(warnings);
-
-        let color = if success { Yellow } else { Red };
-
-        for (name, content) in [("STDOUT", &stdout), ("STDERR", &stderr)] {
-            if !content.is_empty() {
-                self.bold_color(color);
-                self.emitln(format_args!("{name}:"));
-                snippet(self, color, &normalize::trim(content));
-                self.emitln(format_args!(""));
-            }
+    for (name, content) in [("STDOUT", &detail.stdout), ("STDERR", &detail.stderr)] {
+        if !content.is_empty() {
+            reporter.bold_color(Red);
+            reporter.emitln(format_args!("{name}:"));
+            snippet(reporter, Red, content);
+            reporter.emitln(format_args!(""));
         }
     }
+}
 
-    fn fail_output(&mut self, level: Level, stdout: &str) {
-        let color = match level {
-            Fail => Red,
-            Warn => Yellow,
-        };
+/// Renders a failing case with no richer data than its `Display` message.
+#[allow(
+    clippy::single_call_fn,
+    reason = "the generic failing-case render, the fallback arm of render_error's dispatch"
+)]
+fn error_line(reporter: &mut Reporter, error: &TryBuildError) {
+    reporter.bold_color(Red);
+    reporter.emitln(format_args!("error"));
+    reporter.color(Red);
+    reporter.emitln(format_args!("{error}"));
+    reporter.reset();
+    reporter.emitln(format_args!(""));
+}
 
-        if !stdout.is_empty() {
-            self.bold_color(color);
-            self.emitln(format_args!("STDOUT:"));
-            snippet(self, color, &normalize::trim(stdout));
-            self.emitln(format_args!(""));
-        }
+/// Renders captured build warnings, if any.
+fn warnings(reporter: &mut Reporter, warnings: &str) {
+    if warnings.is_empty() {
+        return;
     }
 
-    fn warnings(&mut self, warnings: &str) {
-        if warnings.is_empty() {
-            return;
-        }
-
-        self.bold_color(Yellow);
-        self.emitln(format_args!("WARNINGS:"));
-        snippet(self, Yellow, warnings);
-        self.emitln(format_args!(""));
-    }
+    reporter.bold_color(Yellow);
+    reporter.emitln(format_args!("WARNINGS:"));
+    snippet(reporter, Yellow, warnings);
+    reporter.emitln(format_args!(""));
 }
 
 /// Renders a dotted-bordered snippet in the given color.
