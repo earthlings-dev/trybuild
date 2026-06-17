@@ -1,8 +1,14 @@
-fn main() {
+//! Build script for trybuild: declares custom `cfg` flags and rerun triggers.
+
+use std::io::{self, Write as _};
+
+fn main() -> io::Result<()> {
     // Warning: build.rs is not published to crates.io.
 
-    println!("cargo:rerun-if-changed=src/tests");
-    println!("cargo:rustc-cfg=check_cfg");
-    println!("cargo:rustc-check-cfg=cfg(check_cfg)");
-    println!("cargo:rustc-check-cfg=cfg(trybuild_no_target)");
+    let mut stdout = io::stdout().lock();
+    writeln!(stdout, "cargo:rerun-if-changed=src/tests")?;
+    writeln!(stdout, "cargo:rustc-cfg=check_cfg")?;
+    writeln!(stdout, "cargo:rustc-check-cfg=cfg(check_cfg)")?;
+    writeln!(stdout, "cargo:rustc-check-cfg=cfg(trybuild_no_target)")?;
+    Ok(())
 }

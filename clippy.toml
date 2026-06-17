@@ -1,0 +1,177 @@
+# Clippy thresholds and disallowed-lists. Lint levels themselves live in
+# `[workspace.lints.clippy]` in Cargo.toml. For the full reference of every
+# configurable key, see `template-clippy.toml`.
+#
+# No `msrv` pin: this template tracks rolling stable. Clippy defaults to the
+# active toolchain's feature set, which is what we want.
+
+# ── Quality-of-life gates ───────────────────────────────────────────────────
+avoid-breaking-exported-api      = false
+allow-unwrap-in-tests            = false
+allow-expect-in-tests            = false
+allow-panic-in-tests             = false
+allow-dbg-in-tests               = false
+allow-print-in-tests             = false
+allow-indexing-slicing-in-tests  = false
+allow-useless-vec-in-tests       = false
+
+# ── Complexity / size thresholds ────────────────────────────────────────────
+cognitive-complexity-threshold   = 20
+excessive-nesting-threshold      = 4       # mirrors tsconfig max-depth
+too-many-arguments-threshold     = 7
+too-many-lines-threshold         = 90
+type-complexity-threshold        = 160
+enum-variant-size-threshold      = 200
+enum-variant-name-threshold      = 3
+large-error-threshold            = 128
+pass-by-value-size-limit         = 16
+single-char-binding-names-threshold = 3
+trivial-copy-size-limit          = 16
+verbose-bit-mask-threshold       = 1
+array-size-threshold             = 512000
+stack-size-threshold             = 512000
+future-size-threshold            = 8192
+literal-representation-threshold = 10
+max-fn-params-bools              = 2
+max-struct-bools                 = 2
+max-include-file-size            = 1000000
+max-suggested-slice-pattern-length = 3
+max-trait-bounds                 = 3
+vec-box-size-threshold           = 4096
+unnecessary-box-size             = 128
+
+# ── Name allow-list (matches tsconfig ALLOWED_SHORT_NAMES philosophy) ──────
+allowed-idents-below-min-chars = [
+    "x", "y", "z", "i", "j", "n", "f",
+]
+
+# ── Doc identifier allow-list (extends, does NOT replace, clippy defaults) ──
+# `clippy::doc_markdown` (active via the `pedantic` deny floor) flags
+# un-backticked identifiers in docs. The `..` token splices in clippy's built-in
+# list (GitHub, OAuth, WebGL, …); to allow a project-specific ident, prepend it
+# before `..`, e.g. `["MyProduct", ".."]`. As written this only restates the
+# defaults — an explicit, documented extension point rather than a behaviour change.
+doc-valid-idents = [".."]
+
+# ── Async suspension hazards ────────────────────────────────────────────────
+# Extend `await_holding_invalid_type` to the sync guard types we most want to
+# drop before `.await`.
+await-holding-invalid-types = [
+    "parking_lot::MutexGuard",
+    "parking_lot::MappedMutexGuard",
+    "parking_lot::RwLockReadGuard",
+    "parking_lot::MappedRwLockReadGuard",
+    "parking_lot::RwLockWriteGuard",
+    "parking_lot::MappedRwLockWriteGuard",
+]
+
+# ── Blocked placeholder names (bad variable names that AI agents love) ─────
+disallowed-names = [
+    "foo", "bar", "baz", "tmp", "temp",
+    "data", "val", "thing", "stuff", "date",
+    "todo", "fixme", "xxx", "test", "qux",
+    "info", "value", "item", "price", "amount",
+]
+
+# ── Disallowed macros (debug artefacts, stubs, ad-hoc error construction) ──
+# Ad-hoc error construction macros from `anyhow` are blocked workspace-wide;
+# boundary crates (bin, xtask) opt in via per-crate `[lints.clippy]` overrides.
+disallowed-macros = [
+    { path = "std::dbg",                                 reason = "debug artefact — remove before committing" },
+    { path = "std::todo",                                reason = "incomplete code must not land" },
+    { path = "std::unimplemented",                       reason = "incomplete code must not land" },
+    { path = "std::print",                               reason = "use tracing/log crate" },
+    { path = "std::println",                             reason = "use tracing/log crate" },
+    { path = "std::eprint",                              reason = "use tracing/log crate" },
+    { path = "std::eprintln",                            reason = "use tracing/log crate" },
+    { path = "anyhow::anyhow",                           reason = "typed errors only; anyhow is permitted only at bin/xtask boundary points" },
+    { path = "anyhow::bail",                             reason = "typed errors only; anyhow is permitted only at bin/xtask boundary points" },
+    { path = "anyhow::ensure",                           reason = "typed errors only; anyhow is permitted only at bin/xtask boundary points" },
+    # Assertion macros panic. No test exemption: tests return
+    # `Result<(), strict_test_support::TestFailure>` and use the `ensure*` helpers.
+    { path = "std::assert",                              reason = "panics; return Result + strict_test_support::ensure / ensure_eq" },
+    { path = "std::assert_eq",                           reason = "panics; use strict_test_support::ensure_eq or ensure(a == b, ..)" },
+    { path = "std::assert_ne",                           reason = "panics; use strict_test_support::ensure_ne or ensure(a != b, ..)" },
+    { path = "std::debug_assert",                        reason = "panics in debug, silently dropped in release; model the invariant instead" },
+    { path = "std::debug_assert_eq",                     reason = "panics in debug, silently dropped in release; use strict_test_support::ensure_eq" },
+    { path = "std::debug_assert_ne",                     reason = "panics in debug, silently dropped in release; use strict_test_support::ensure_ne" },
+    # Property tests go through `strict_test_support::ensure_property`, which wraps
+    # proptest's Result-based `TestRunner::run`; these macro front doors either
+    # panic or bypass the `TestFailure` vocabulary. The non-panicking strategy
+    # constructors (`prop_oneof!`, `prop_compose!`) remain allowed.
+    { path = "proptest::proptest",                       reason = "panicking property harness; use strict_test_support::ensure_property" },
+    { path = "proptest::prop_assert",                    reason = "bypasses the TestFailure vocabulary; use strict_test_support::ensure inside the property closure" },
+    { path = "proptest::prop_assert_eq",                 reason = "bypasses the TestFailure vocabulary; use strict_test_support::ensure_eq inside the property closure" },
+    { path = "proptest::prop_assert_ne",                 reason = "bypasses the TestFailure vocabulary; use strict_test_support::ensure_ne inside the property closure" },
+    { path = "proptest::prop_assume",                    reason = "rejection belongs in the strategy; use Strategy::prop_filter" },
+    # Snapshot tests go through `strict_test_support::ensure_snapshot`, which wraps
+    # snapbox's Result-based `Assert::try_eq`; the macro front door panics.
+    { path = "snapbox::assert_data_eq",                  reason = "panicking snapshot harness; use strict_test_support::ensure_snapshot" },
+]
+
+# ── Disallowed methods (ad-hoc error construction + easy-to-misuse std items) ─
+disallowed-methods = [
+    { path = "std::mem::forget",        reason = "leaks resources; use drop or ManuallyDrop" },
+    { path = "std::process::exit",      reason = "bypasses destructors; return from main instead" },
+    { path = "std::process::abort",     reason = "bypasses destructors" },
+    { path = "std::env::set_var",       reason = "racy in multi-threaded programs" },
+    { path = "std::env::remove_var",    reason = "racy in multi-threaded programs" },
+    { path = "std::io::Error::new",     reason = "ad-hoc error construction; define a typed error (e.g. via thiserror)" },
+    { path = "std::io::Error::other",   reason = "ad-hoc error construction; define a typed error (e.g. via thiserror)" },
+    { path = "std::time::SystemTime::now", reason = "use chrono::Utc::now" },
+    { path = "f64::to_string",          reason = "financial precision" },
+    { path = "f32::to_string",          reason = "financial precision" },
+    { path = "anyhow::Error::msg",      reason = "typed errors only; anyhow is permitted only at bin/xtask boundary points" },
+    # ── Panicking slice methods (indexing_slicing only catches the `[]` operator) ──
+    { path = "slice::split_at",         reason = "panics if mid > len; use split_at_checked" },
+    { path = "slice::split_at_mut",     reason = "panics if mid > len; use split_at_mut_checked" },
+    { path = "slice::chunks",           reason = "panics if chunk size == 0; validate the size first" },
+    { path = "slice::chunks_exact",     reason = "panics if chunk size == 0; validate the size first" },
+    { path = "slice::rchunks",          reason = "panics if chunk size == 0; validate the size first" },
+    { path = "slice::rchunks_exact",    reason = "panics if chunk size == 0; validate the size first" },
+    { path = "slice::windows",          reason = "panics if size == 0; validate the size first" },
+    { path = "slice::copy_from_slice",  reason = "panics on length mismatch; check lengths first" },
+    { path = "slice::clone_from_slice", reason = "panics on length mismatch; check lengths first" },
+    { path = "slice::rotate_left",      reason = "panics if mid > len; validate first" },
+    { path = "slice::rotate_right",     reason = "panics if k > len; validate first" },
+    { path = "slice::swap",             reason = "panics on out-of-bounds index; use get/get_mut + mem::swap" },
+    # ── Panicking Vec methods ──
+    { path = "std::vec::Vec::remove",      reason = "panics if index out of bounds; check len first" },
+    { path = "std::vec::Vec::insert",      reason = "panics if index > len; check len first" },
+    { path = "std::vec::Vec::swap_remove", reason = "panics if index out of bounds; check len first" },
+    { path = "std::vec::Vec::split_off",   reason = "panics if at > len; check len first" },
+    { path = "std::vec::Vec::drain",       reason = "panics if the range is out of bounds; validate the range" },
+    # ── Panicking String methods (off a char boundary / out of bounds) ──
+    { path = "std::string::String::remove",     reason = "panics off a char boundary; validate first" },
+    { path = "std::string::String::insert",     reason = "panics off a char boundary; validate first" },
+    { path = "std::string::String::insert_str", reason = "panics off a char boundary; validate first" },
+    { path = "std::string::String::split_off",  reason = "panics off a char boundary; validate first" },
+    { path = "std::string::String::drain",      reason = "panics off char boundaries; validate first" },
+    { path = "std::string::String::truncate",   reason = "panics off a char boundary; validate first" },
+    # ── Panicking str methods ──
+    { path = "str::split_at",     reason = "panics off a char boundary / past end; use split_at_checked" },
+    { path = "str::split_at_mut", reason = "panics off a char boundary / past end" },
+    # ── Panicking Duration float constructors / scaling ──
+    { path = "std::time::Duration::from_secs_f64", reason = "panics on negative/NaN/overflow; use try_from_secs_f64" },
+    { path = "std::time::Duration::from_secs_f32", reason = "panics on negative/NaN/overflow; use try_from_secs_f32" },
+    { path = "std::time::Duration::mul_f64",        reason = "panics on overflow / non-finite factor" },
+    { path = "std::time::Duration::mul_f32",        reason = "panics on overflow / non-finite factor" },
+    { path = "std::time::Duration::div_f64",        reason = "panics on overflow / non-finite divisor" },
+    { path = "std::time::Duration::div_f32",        reason = "panics on overflow / non-finite divisor" },
+    # ── Interior-mutability borrows that panic on a borrow conflict ──
+    { path = "std::cell::RefCell::borrow",     reason = "panics on a borrow conflict; use try_borrow" },
+    { path = "std::cell::RefCell::borrow_mut", reason = "panics on a borrow conflict; use try_borrow_mut" },
+    # NOTE: map / slice / array `[]` indexing (incl. `map[key]`) and `str` range
+    # slicing are already hard errors via `indexing_slicing` + `string_slice`
+    # (deny) in Cargo.toml — no disallowed-methods entry is needed or works for
+    # the `[]` operator (it does not catch the Index::index desugar).
+]
+
+# ── Disallowed types (no type-erased or ad-hoc error wrappers in libraries) ─
+disallowed-types = [
+    { path = "anyhow::Error",      reason = "typed errors only; anyhow is permitted only at bin/xtask boundary points" },
+    { path = "anyhow::Result",     reason = "typed errors only; use Result<T, YourCrateError>" },
+    { path = "std::sync::Mutex",   reason = "prefer parking_lot in sync code; use async-aware primitives or redesign shared state in async code" },
+    { path = "std::sync::RwLock",  reason = "prefer parking_lot in sync code; use async-aware primitives or redesign shared state in async code" },
+    { path = "std::sync::Condvar", reason = "prefer parking_lot in sync code; use async-aware signalling in async code" },
+]

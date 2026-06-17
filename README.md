@@ -41,8 +41,9 @@ A minimal trybuild setup looks like this:
 ```rust
 #[test]
 fn ui() {
-    let t = trybuild::TestCases::new();
+    let mut t = trybuild::TestCases::new();
     t.compile_fail("tests/ui/*.rs");
+    t.run().unwrap();
 }
 ```
 
@@ -93,7 +94,7 @@ my [procedural macros workshop at Rust Latam][workshop].
 ```rust
 #[test]
 fn ui() {
-    let t = trybuild::TestCases::new();
+    let mut t = trybuild::TestCases::new();
     t.pass("tests/01-parse-header.rs");
     t.pass("tests/02-parse-body.rs");
     t.compile_fail("tests/03-expand-four-errors.rs");
@@ -102,6 +103,7 @@ fn ui() {
     //t.pass("tests/06-make-work-in-function.rs");
     //t.pass("tests/07-init-array.rs");
     //t.compile_fail("tests/08-ident-span.rs");
+    t.run().unwrap();
 }
 ```
 

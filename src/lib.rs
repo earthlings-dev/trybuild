@@ -30,11 +30,12 @@
 //!
 //! A minimal trybuild setup looks like this:
 //!
-//! ```
+//! ```ignore
 //! #[test]
 //! fn ui() {
-//!     let t = trybuild::TestCases::new();
+//!     let mut t = trybuild::TestCases::new();
 //!     t.compile_fail("tests/ui/*.rs");
+//!     t.run().unwrap();
 //! }
 //! ```
 //!
@@ -58,7 +59,7 @@
 //! <img src="https://user-images.githubusercontent.com/1940490/57186575-79418e80-6e96-11e9-9478-c9b3dc10327f.png" width="700">
 //! </p>
 //!
-//! A compile_fail test that fails to fail to compile is also a failure.
+//! A `compile_fail` test that fails to fail to compile is also a failure.
 //!
 //! <p align="center">
 //! <img src="https://user-images.githubusercontent.com/1940490/57186576-7b0b5200-6e96-11e9-8bfd-2de705125108.png" width="700">
@@ -77,10 +78,10 @@
 //!
 //! [workshop]: https://github.com/dtolnay/proc-macro-workshop
 //!
-//! ```
+//! ```ignore
 //! #[test]
 //! fn ui() {
-//!     let t = trybuild::TestCases::new();
+//!     let mut t = trybuild::TestCases::new();
 //!     t.pass("tests/01-parse-header.rs");
 //!     t.pass("tests/02-parse-body.rs");
 //!     t.compile_fail("tests/03-expand-four-errors.rs");
@@ -89,6 +90,7 @@
 //!     //t.pass("tests/06-make-work-in-function.rs");
 //!     //t.pass("tests/07-init-array.rs");
 //!     //t.compile_fail("tests/08-ident-span.rs");
+//!     t.run().unwrap();
 //! }
 //! ```
 //!
@@ -112,7 +114,7 @@
 //! There are two ways to update the _*.stderr_ files as you iterate on your
 //! test cases or your library; handwriting them is not recommended.
 //!
-//! First, if a test case is being run as compile_fail but a corresponding
+//! First, if a test case is being run as `compile_fail` but a corresponding
 //! _*.stderr_ file does not exist, the test runner will save the actual
 //! compiler output with the right filename into a directory called *wip* within
 //! the directory containing Cargo.toml. So you can update these files by
@@ -218,7 +220,7 @@
 //! available locally, and will simply omit snippets if not. This can account
 //! for differences between CI and local development.
 //!
-//! If you have compile_fail tests pertaining to standard library traits or
+//! If you have `compile_fail` tests pertaining to standard library traits or
 //! types, you can ensure a consistent environment by adding a
 //! rust-toolchain.toml file with the following content.
 //!
@@ -228,118 +230,14 @@
 //! ```
 
 #![doc(html_root_url = "https://docs.rs/trybuild/1.0.116")]
-#![cfg_attr(not(check_cfg), allow(unexpected_cfgs))]
-#![allow(
-    clippy::collapsible_if,
-    clippy::comparison_chain,
-    clippy::default_trait_access,
-    clippy::derive_partial_eq_without_eq,
-    clippy::doc_markdown,
-    clippy::elidable_lifetime_names,
-    clippy::enum_glob_use,
-    clippy::iter_not_returning_iterator, // https://github.com/rust-lang/rust-clippy/issues/8285
-    clippy::let_underscore_untyped, // https://github.com/rust-lang/rust-clippy/issues/10410
-    clippy::manual_assert,
-    clippy::manual_range_contains,
-    clippy::module_inception,
-    clippy::module_name_repetitions,
-    clippy::must_use_candidate,
-    clippy::needless_lifetimes,
-    clippy::needless_pass_by_value,
-    clippy::non_ascii_literal,
-    clippy::range_plus_one,
-    clippy::similar_names,
-    clippy::single_match_else,
-    clippy::test_attr_in_doctest,
-    clippy::too_many_lines,
-    clippy::trivially_copy_pass_by_ref,
-    clippy::uninhabited_references,
-    clippy::uninlined_format_args,
-    clippy::unused_self,
-    clippy::while_let_on_iterator,
+#![cfg_attr(
+    not(check_cfg),
+    allow(
+        unexpected_cfgs,
+        reason = "the check_cfg cfg is set by build.rs only when the compiler supports it"
+    )
 )]
-#![deny(clippy::clone_on_ref_ptr)]
-#![allow(unknown_lints, mismatched_lifetime_syntaxes)]
 
-#[macro_use]
-mod term;
+mod internal;
 
-#[macro_use]
-mod path;
-
-mod cargo;
-mod dependencies;
-mod diff;
-mod directory;
-mod env;
-mod error;
-mod expand;
-mod features;
-mod flock;
-mod inherit;
-mod manifest;
-mod message;
-mod normalize;
-mod run;
-mod rustflags;
-
-use std::cell::RefCell;
-use std::panic::RefUnwindSafe;
-use std::path::{Path, PathBuf};
-use std::thread;
-
-#[derive(Debug)]
-pub struct TestCases {
-    runner: RefCell<Runner>,
-}
-
-#[derive(Debug)]
-struct Runner {
-    tests: Vec<Test>,
-}
-
-#[derive(Clone, Debug)]
-struct Test {
-    path: PathBuf,
-    expected: Expected,
-}
-
-#[derive(Copy, Clone, Debug)]
-enum Expected {
-    Pass,
-    CompileFail,
-}
-
-impl TestCases {
-    #[allow(clippy::new_without_default)]
-    pub fn new() -> Self {
-        TestCases {
-            runner: RefCell::new(Runner { tests: Vec::new() }),
-        }
-    }
-
-    pub fn pass<P: AsRef<Path>>(&self, path: P) {
-        self.runner.borrow_mut().tests.push(Test {
-            path: path.as_ref().to_owned(),
-            expected: Expected::Pass,
-        });
-    }
-
-    pub fn compile_fail<P: AsRef<Path>>(&self, path: P) {
-        self.runner.borrow_mut().tests.push(Test {
-            path: path.as_ref().to_owned(),
-            expected: Expected::CompileFail,
-        });
-    }
-}
-
-impl RefUnwindSafe for TestCases {}
-
-#[doc(hidden)]
-impl Drop for TestCases {
-    fn drop(&mut self) {
-        if !thread::panicking() {
-            self.runner.borrow_mut().run();
-        }
-    }
-}
+pub use crate::internal::{TestCases, TryBuildError};
