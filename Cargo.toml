@@ -35,7 +35,7 @@ toml = "1"
 # Dev Dependencies
 automod = "1.0.17"
 libfuzzer-sys = "0.4"
-strict-test-support = { git = "ssh://git@github.com/earthlings-dev/strict-test-support-rs.git" }
+strict-test-support = { version = "0.1.0", git = "ssh://git@github.com/earthlings-dev/strict-test-support-rs.git", branch = "main" }
 
 [package]
 name = "trybuild"

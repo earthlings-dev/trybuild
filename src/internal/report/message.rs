@@ -11,7 +11,9 @@ use crate::internal::build::BuildError;
 use crate::internal::diagnostics::{DiagnosticsError, UnexpectedSuccess};
 use crate::internal::model::Expected;
 use crate::internal::outcome::{CaseReport, Outcome, OverwriteDetail, PassDetail, WipDetail};
-use crate::internal::report::diff::{Diff, Render};
+use crate::internal::report::diff::Diff;
+#[cfg(all(feature = "diff", not(windows)))]
+use crate::internal::report::diff::Render;
 use crate::internal::report::reporter::Reporter;
 use crate::internal::runner::{RunOutput, RunnerError};
 use std::env;
@@ -303,6 +305,7 @@ fn snippet(reporter: &mut Reporter, color: Color, content: &str) {
 
 /// Renders a dotted-bordered snippet, highlighting diff-unique runs if a diff
 /// is supplied.
+#[cfg(all(feature = "diff", not(windows)))]
 fn snippet_diff(
     reporter: &mut Reporter,
     color: Color,
@@ -330,6 +333,22 @@ fn snippet_diff(
         None => reporter.emit(format_args!("{content}")),
     }
 
+    reporter.color(color);
+    reporter.emitln(format_args!("{}", "-".repeat(60)));
+    reporter.reset();
+}
+
+/// Renders a dotted-bordered snippet when diff highlighting is unavailable.
+#[cfg(any(not(feature = "diff"), windows))]
+fn snippet_diff(
+    reporter: &mut Reporter,
+    color: Color,
+    content: &str,
+    _maybe_diff: Option<&Diff<'_>>,
+) {
+    reporter.color(color);
+    reporter.emitln(format_args!("{}", "-".repeat(60)));
+    reporter.emit(format_args!("{content}"));
     reporter.color(color);
     reporter.emitln(format_args!("{}", "-".repeat(60)));
     reporter.reset();

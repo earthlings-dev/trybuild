@@ -560,7 +560,7 @@ fn run_all(
         } else {
             let src_path = CanonicalPath::new(&project.source_dir.join(&case.path));
             let this_test = parsed.stderrs.get(&src_path).unwrap_or(&fallback);
-            case.check(project, &name, this_test, "")
+            case.check(project, &name, this_test, "", None)
         };
         let report = CaseReport {
             path: case.path,
@@ -592,7 +592,8 @@ impl Test {
         let parsed = parse_cargo_json(project, &output.stdout, &path_map);
         let fallback = Stderr::default();
         let this_test = parsed.stderrs.get(&src_path).unwrap_or(&fallback);
-        self.check(project, name, this_test, &parsed.stdout)
+        let executable = parsed.executables.get(&src_path).map(PathBuf::as_path);
+        self.check(project, name, this_test, &parsed.stdout, executable)
     }
 
     /// Dispatches to [`check_pass`](Self::check_pass) or
@@ -603,6 +604,7 @@ impl Test {
         name: &Name,
         result: &Stderr,
         build_stdout: &str,
+        executable: Option<&Path>,
     ) -> error::Result<Outcome> {
         let check = match self.expected {
             Expected::Pass => Self::check_pass,
@@ -616,6 +618,7 @@ impl Test {
             result.success,
             build_stdout,
             &result.stderr,
+            executable,
         )
     }
 
@@ -636,6 +639,7 @@ impl Test {
         success: bool,
         build_stdout: &str,
         variations: &Variations,
+        executable: Option<&Path>,
     ) -> error::Result<Outcome> {
         let preferred = variations.preferred();
         if !success {
@@ -645,7 +649,7 @@ impl Test {
             .into());
         }
 
-        let mut output = cargo::run_test(project, name)?;
+        let mut output = cargo::run_test(project, name, executable)?;
         // Prepend the build stdout; `splice` must drop here so the edit applies
         // before `output` is read below.
         drop(output.stdout.splice(..0, build_stdout.bytes()));
@@ -682,6 +686,7 @@ impl Test {
         success: bool,
         build_stdout: &str,
         variations: &Variations,
+        _executable: Option<&Path>,
     ) -> error::Result<Outcome> {
         let preferred = variations.preferred();
 

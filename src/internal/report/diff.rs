@@ -6,6 +6,7 @@
 pub(in crate::internal) use self::r#impl::Diff;
 
 /// A run of diff output: text common to both snapshots, or unique to one.
+#[cfg(all(feature = "diff", not(windows)))]
 pub(in crate::internal) enum Render<'a> {
     /// Text present in both the expected and actual output.
     Common(&'a str),
@@ -90,19 +91,16 @@ mod r#impl {
 }
 
 /// The inert diff implementation used when the `diff` feature is disabled or on
-/// Windows; [`Diff`] is uninhabited and never constructed.
+/// Windows; [`Diff`] is a placeholder and never constructed.
 #[cfg(any(not(feature = "diff"), windows))]
 mod r#impl {
-    use super::Render;
-    use std::convert::Infallible;
+    use std::marker::PhantomData;
 
-    // When the `diff` feature is disabled there is never a diff to render:
-    // `compute` always returns `None`, so a `Diff` value cannot be constructed.
-    // The `&'a Infallible` field encodes that uninhabitedness and carries the
-    // `'a` lifetime, keeping this type's arity identical to the enabled-feature
-    // `Diff<'a>` so that `message::snippet_diff` names `Diff<'_>` either way.
-    /// An uninhabited placeholder `Diff` that is never constructed in this build.
-    pub(in crate::internal) struct Diff<'a>(&'a Infallible);
+    /// A placeholder `Diff` that is never constructed in this build.
+    pub(in crate::internal) struct Diff<'a> {
+        /// Carries the snapshot lifetime so this type matches the active impl.
+        _lifetime: PhantomData<&'a str>,
+    }
 
     impl<'a> Diff<'a> {
         /// Always `None`: there is no diff to compute when the feature is off.
@@ -115,17 +113,6 @@ mod r#impl {
             _actual: &'a str,
         ) -> Option<Self> {
             None
-        }
-
-        /// Unreachable: a `Diff` is never constructed in this build.
-        pub(in crate::internal) fn iter<'i>(
-            &'i self,
-            _input: &str,
-        ) -> Box<dyn Iterator<Item = Render<'a>> + 'i> {
-            // `Render` is only constructed when the `diff` feature is enabled;
-            // name both constructors so the variants are not dead in this build.
-            let _witnessed = (Render::Common, Render::Unique);
-            match *self.0 {}
         }
     }
 }

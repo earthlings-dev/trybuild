@@ -11,7 +11,7 @@ use crate::internal::sys::SysError;
 use crate::internal::sys::directory::Directory;
 use serde_derive::Deserialize;
 use std::fs::File;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 use std::{env, io, iter};
 use target_triple::TARGET;
@@ -177,19 +177,8 @@ pub(in crate::internal) fn build_dependencies(project: &mut Project) -> Result<(
         KeepGoing::No
     };
 
-    Ok(())
-}
-
-/// Builds (or checks) a single named test bin, capturing its JSON diagnostics.
-///
-/// Cleans the package first so the build is not short-circuited by caching;
-/// rustc only re-emits diagnostics on a fresh compile.
-#[allow(
-    clippy::single_call_fn,
-    reason = "a named cargo build entry point on this module's surface to the runner, deliberately parallel to build_all_tests"
-)]
-pub(in crate::internal) fn build_test(project: &Project, name: &Name) -> Result<Output> {
-    // Best-effort pre-build clean; build/run below report any real failure.
+    // Best-effort suite-level clean: dependency artifacts remain reusable, while
+    // stale generated-package diagnostics from a prior run are cleared once.
     let _cleaned = cargo(project)
         .arg("clean")
         .arg("--package")
@@ -199,6 +188,18 @@ pub(in crate::internal) fn build_test(project: &Project, name: &Name) -> Result<
         .stderr(Stdio::null())
         .status();
 
+    Ok(())
+}
+
+/// Builds (or checks) a single named test bin, capturing its JSON diagnostics.
+///
+/// The suite has already cleaned the generated package once, so rustc emits
+/// diagnostics without forcing every fixture to throw away prior bin builds.
+#[allow(
+    clippy::single_call_fn,
+    reason = "a named cargo build entry point on this module's surface to the runner, deliberately parallel to build_all_tests"
+)]
+pub(in crate::internal) fn build_test(project: &Project, name: &Name) -> Result<Output> {
     cargo_with_rustflags(project, &["--diagnostic-width=140"])
         .arg(if project.selected.has_pass() {
             "build"
@@ -220,23 +221,13 @@ pub(in crate::internal) fn build_test(project: &Project, name: &Name) -> Result<
 /// JSON diagnostics.
 ///
 /// The batched fast path taken when every case is `compile_fail` and cargo
-/// supports `--keep-going`; like [`build_test`] it cleans first so diagnostics
-/// are re-emitted.
+/// supports `--keep-going`; the suite-level clean has already made diagnostics
+/// fresh for this run.
 #[allow(
     clippy::single_call_fn,
     reason = "the batched --keep-going build entry point, deliberately parallel to build_test on this module's runner-facing surface"
 )]
 pub(in crate::internal) fn build_all_tests(project: &Project) -> Result<Output> {
-    // Best-effort pre-build clean; build/run below report any real failure.
-    let _cleaned = cargo(project)
-        .arg("clean")
-        .arg("--package")
-        .arg(&project.name)
-        .arg("--color=never")
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status();
-
     cargo_with_rustflags(project, &["--diagnostic-width=140"])
         .arg(if project.selected.has_pass() {
             "build"
@@ -255,11 +246,47 @@ pub(in crate::internal) fn build_all_tests(project: &Project) -> Result<Output> 
 }
 
 /// Runs a successfully built pass-test's binary and captures its output.
+///
+/// Prefer the executable path cargo reported in the build JSON, avoiding a
+/// second cargo invocation after the diagnostic build has already produced the
+/// binary. Fall back to `cargo run` only when cargo omitted that artifact path.
 #[allow(
     clippy::single_call_fn,
     reason = "the pass-test execution entry point on this module's cargo surface, kept beside the build entry points it complements"
 )]
-pub(in crate::internal) fn run_test(project: &Project, name: &Name) -> Result<Output> {
+pub(in crate::internal) fn run_test(
+    project: &Project,
+    name: &Name,
+    executable_path: Option<&Path>,
+) -> Result<Output> {
+    if let Some(path) = executable_path {
+        return run_built_executable(project, path);
+    }
+    run_via_cargo(project, name)
+}
+
+/// Runs the already-built test executable directly.
+#[allow(
+    clippy::single_call_fn,
+    reason = "the normal pass-test runtime path; split from the cargo-run compatibility fallback"
+)]
+fn run_built_executable(project: &Project, executable: &Path) -> Result<Output> {
+    let mut command = Command::new(executable);
+    let _: &mut Command = command
+        .current_dir(&project.dir)
+        .envs(cargo_target_dir(project))
+        .env_remove("RUSTFLAGS")
+        .env("CARGO_INCREMENTAL", "0");
+    command.output().map_err(BuildError::Cargo)
+}
+
+/// Compatibility fallback for cargo versions or edge cases that omit an
+/// executable path from the build JSON.
+#[allow(
+    clippy::single_call_fn,
+    reason = "compatibility fallback kept separate from the normal direct-executable path"
+)]
+fn run_via_cargo(project: &Project, name: &Name) -> Result<Output> {
     cargo(project)
         .arg("run")
         .args(target())

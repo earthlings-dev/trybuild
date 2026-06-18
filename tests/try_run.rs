@@ -1,15 +1,14 @@
 //! Integration tests for the typed, terminal-free [`TestCases::try_run`] core.
 //!
 //! [`try_run`](trybuild::TestCases::try_run) returns every fixture's outcome as
-//! data (never printing), so these tests assert the typed [`Report`] directly —
-//! both polarities of each outcome — and that the run writes nothing to the
-//! terminal (driven through `strict_test_support::capture_ignored_test`).
+//! data (never printing). The default test re-execs one ignored child through
+//! `strict_test_support::capture_ignored_test`, so the same `try_run` execution
+//! proves both typed outcomes and terminal silence.
 
 #[cfg(test)]
 mod tests {
     use strict_test_support::TestFailure;
     use strict_test_support::capture_ignored_test;
-    use strict_test_support::ensure;
     use strict_test_support::ensure_all;
     use strict_test_support::ensure_ok_source;
     use strict_test_support::ensure_some;
@@ -30,7 +29,7 @@ mod tests {
     /// outcome variant — the both-polarity coverage of every outcome.
     #[allow(
         clippy::single_call_fn,
-        reason = "extracted from try_run_reports_typed_outcomes to keep that test within the line budget; one in-crate caller"
+        reason = "extracted from try_run_reports_typed_outcomes_child to keep that test within the line budget; one in-crate caller"
     )]
     fn verify_outcome_polarities(report: &trybuild::Report) -> Result<(), TestFailure> {
         ensure_all(&[
@@ -99,7 +98,7 @@ mod tests {
     /// Asserts the mismatch carries both sides of the diff as data, not printed.
     #[allow(
         clippy::single_call_fn,
-        reason = "extracted from try_run_reports_typed_outcomes to keep that test within the line budget; one in-crate caller"
+        reason = "extracted from try_run_reports_typed_outcomes_child to keep that test within the line budget; one in-crate caller"
     )]
     fn verify_mismatch_diff(report: &trybuild::Report) -> Result<(), TestFailure> {
         let mismatch_detail = report
@@ -133,8 +132,10 @@ mod tests {
         ])
     }
 
+    /// Runs the full typed-outcome suite as a captured child.
     #[test]
-    fn try_run_reports_typed_outcomes() -> Result<(), TestFailure> {
+    #[ignore = "driven by try_run_reports_typed_outcomes_without_terminal_output via capture_ignored_test"]
+    fn try_run_reports_typed_outcomes_child() -> Result<(), TestFailure> {
         // A mixed pass + compile_fail suite, exercising the per-test path and
         // every outcome variant in one run.
         let mut cases = trybuild::TestCases::new();
@@ -155,33 +156,14 @@ mod tests {
         verify_mismatch_diff(&report)
     }
 
-    /// Driven only by [`try_run_writes_nothing_to_the_terminal`] as a captured
-    /// re-exec; a compile_fail-only suite, which also exercises the batched path.
+    /// Re-execs the typed-outcome child and proves `try_run` stays terminal-free.
     #[test]
-    #[ignore = "driven by try_run_writes_nothing_to_the_terminal via capture_ignored_test; a direct run only proves try_run returns"]
-    fn silent_try_run_child() -> Result<(), TestFailure> {
-        let mut cases = trybuild::TestCases::new();
-        cases.compile_fail("tests/ui/compile-fail-2.rs");
-        let report = ensure_ok_source(
-            cases.try_run(trybuild::Update::Verify),
-            "try_run sets up the throwaway project",
-        )?;
-        ensure(
-            matches!(
-                outcome_of(&report, "compile-fail-2.rs"),
-                Some(&Ok(trybuild::Outcome::Passed(_)))
-            ),
-            "the matching compile_fail snapshot passes under the batched path",
-        )
-    }
-
-    #[test]
-    fn try_run_writes_nothing_to_the_terminal() -> Result<(), TestFailure> {
-        let captured = capture_ignored_test("tests::silent_try_run_child")?;
+    fn try_run_reports_typed_outcomes_without_terminal_output() -> Result<(), TestFailure> {
+        let captured = capture_ignored_test("tests::try_run_reports_typed_outcomes_child")?;
         ensure_all(&[
             (
                 captured.status.success(),
-                "the silent child completed successfully",
+                "the typed-outcome child completed successfully",
             ),
             (
                 captured.stderr.is_empty(),
