@@ -233,7 +233,7 @@
 //! components = ["rust-src"]
 //! ```
 
-#![doc(html_root_url = "https://docs.rs/trybuild/1.0.116")]
+#![doc(html_root_url = "https://docs.rs/trybuild/1.0.117")]
 #![cfg_attr(
     not(check_cfg),
     allow(
