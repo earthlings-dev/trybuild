@@ -12,31 +12,27 @@ const IGNORED_LINTS: &[&str] = &["dead_code"];
 /// `-C instrument-coverage` from `RUSTFLAGS` when present, and appends
 /// `extra_rustflags`.
 #[allow(
-    clippy::single_call_fn,
-    reason = "the rustflags assembly is a named, documented construction step kept separate from the cargo-command builders in `build::cargo` that consume it"
+  clippy::single_call_fn,
+  reason = "the rustflags assembly is a named, documented construction step kept separate from the cargo-command builders in \
+            `build::cargo` that consume it"
 )]
 pub(in crate::internal) fn toml(extra_rustflags: &[&'static str]) -> toml::Value {
-    let mut rustflags = vec!["--cfg", "trybuild", "--verbose"];
+  let mut rustflags = vec!["--cfg", "trybuild", "--verbose"];
 
-    for &lint in IGNORED_LINTS {
-        rustflags.push("-A");
-        rustflags.push(lint);
+  for &lint in IGNORED_LINTS {
+    rustflags.push("-A");
+    rustflags.push(lint);
+  }
+
+  if let Some(flags) = env::var_os("RUSTFLAGS") {
+    // TODO: could parse this properly and allowlist or blocklist certain
+    // flags. This is good enough to at least support cargo-llvm-cov.
+    if flags.to_string_lossy().contains("-C instrument-coverage") {
+      rustflags.extend(["-C", "instrument-coverage"]);
     }
+  }
 
-    if let Some(flags) = env::var_os("RUSTFLAGS") {
-        // TODO: could parse this properly and allowlist or blocklist certain
-        // flags. This is good enough to at least support cargo-llvm-cov.
-        if flags.to_string_lossy().contains("-C instrument-coverage") {
-            rustflags.extend(["-C", "instrument-coverage"]);
-        }
-    }
+  rustflags.extend(extra_rustflags);
 
-    rustflags.extend(extra_rustflags);
-
-    toml::Value::Array(
-        rustflags
-            .into_iter()
-            .map(|flag| toml::Value::String(flag.to_owned()))
-            .collect(),
-    )
+  toml::Value::Array(rustflags.into_iter().map(|flag| toml::Value::String(flag.to_owned())).collect())
 }

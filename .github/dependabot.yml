@@ -1,0 +1,10 @@
+# Dependabot covers ONLY the pinned GitHub Actions versions (checkout,
+# rust-cache, upload-artifact, ...). Cargo dependency freshness is deliberately
+# excluded: it is owned by the workspace automation — `just update`,
+# `just upgrade`, and `just outdated` (see the README recipes table).
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

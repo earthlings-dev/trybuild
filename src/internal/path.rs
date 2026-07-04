@@ -3,7 +3,8 @@
 //! [`CanonicalPath`] newtype used as a stable key when grouping diagnostics by
 //! source file.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
+use std::path::PathBuf;
 
 /// Builds a path from `/`-separated component expressions.
 ///
@@ -57,32 +58,31 @@ macro_rules! tokenize_path {
 pub(in crate::internal) struct CanonicalPath(PathBuf);
 
 impl CanonicalPath {
-    /// Canonicalizes `path`, falling back to the path as given if that fails.
-    pub(in crate::internal) fn new(path: &Path) -> Self {
-        path.canonicalize()
-            .map_or_else(|_| Self(path.to_owned()), Self)
-    }
+  /// Canonicalizes `path`, falling back to the path as given if that fails.
+  pub(in crate::internal) fn new(path: &Path) -> Self {
+    path.canonicalize().map_or_else(|_| Self(path.to_owned()), Self)
+  }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+  use super::*;
 
-    #[test]
-    fn test_path_macro() -> Result<(), strict_test_support::TestFailure> {
-        struct Project {
-            dir: PathBuf,
-        }
-
-        let project = Project {
-            dir: PathBuf::from("../target/tests"),
-        };
-
-        let cargo_dir = path!(project.dir / ".cargo" / "config.toml");
-        strict_test_support::ensure(
-            cargo_dir.as_path() == Path::new("../target/tests/.cargo/config.toml"),
-            "path! builds the expected cargo config path",
-        )?;
-        Ok(())
+  #[test]
+  fn test_path_macro() -> Result<(), strict_test_support::TestFailure> {
+    struct Project {
+      dir: PathBuf,
     }
+
+    let project = Project {
+      dir: PathBuf::from("../target/tests"),
+    };
+
+    let cargo_dir = path!(project.dir / ".cargo" / "config.toml");
+    strict_test_support::ensure(
+      cargo_dir.as_path() == Path::new("../target/tests/.cargo/config.toml"),
+      "path! builds the expected cargo config path",
+    )?;
+    Ok(())
+  }
 }

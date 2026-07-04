@@ -1,0 +1,56 @@
+name: Scheduled
+
+# Weekly deep checks that catch drift without a code change. Security
+# advisories rot on their own, and the coverage gates are repeated here so
+# `workflow_dispatch` can refresh reports and badges on demand with the same
+# strict criteria as `ci`.
+on:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  deep-checks:
+    name: audit + coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: Swatinem/rust-cache@v2
+
+      # CI calls xtask directly: GitHub sets CI=true, which satisfies the
+      # `just`/CI invocation guard. `cargo xtask init` is the single source of
+      # truth for toolchains, components, targets, and every cargo tool — the
+      # workflow duplicates no tool list (same contract as ci.yml).
+      - name: Bootstrap toolchains, components, targets, and tools
+        run: cargo xtask init
+
+      - name: cargo xtask audit
+        run: cargo xtask audit
+
+      # Enforces the TOTAL and per-file coverage floors (see
+      # strict-xtask-cargo's coverage workflow), writes summary.txt /
+      # lcov.info / html/ / mode.txt under cov/, and refreshes the full badge
+      # set.
+      - name: cargo xtask coverage --per-file
+        run: cargo xtask coverage --per-file
+
+      - name: cargo xtask coverage-per-feature
+        run: cargo xtask coverage-per-feature
+
+      # Upload the reports even when the floor gate fails — the gate runs
+      # after the writes, so the numbers behind a breach are inspectable.
+      - name: Upload coverage reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-reports
+          path: cov/
+          retention-days: 14

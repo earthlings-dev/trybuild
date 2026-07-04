@@ -1,5 +1,5 @@
 [workspace]
-members = ["./"]
+members = ["./", "xtask"]
 exclude = ["./fuzz"]
 resolver = "3"
 
@@ -13,29 +13,11 @@ documentation = "https://docs.rs/trybuild"
 edition = "2024"
 keywords = ["macros", "testing", "dev-dependencies"]
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/dtolnay/trybuild"
+license-file = "LICENSE-APACHE"
+repository = "https://github.com/strict-rs/strict-trybuild"
 rust-version = "1.96"
 readme       = "README.md"
-
-# ─── Shared dependencies (populate here; members refer via `.workspace = true`) ─
-[workspace.dependencies]
-# Dependencies
-chrono = { version = "0.4", default-features = false, features = ["now"] }
-dissimilar = "1.0"
-glob = "0.3"
-parking_lot = "0.12"
-serde = "1.0.228"
-serde_derive = "1.0.228"
-serde_json = "1.0.150"
-target-triple = "1.0"
-termcolor = "1.4.1"
-thiserror = "2"
-toml = "1"
-
-# Dev Dependencies
-automod = "1.0.17"
-libfuzzer-sys = "0.4"
-strict-test-support = { version = "0.1.0", git = "ssh://git@github.com/earthlings-dev/strict-test-support-rs.git", branch = "main" }
+publish = false
 
 [package]
 name = "trybuild"
@@ -73,6 +55,77 @@ toml.workspace = true
 [dev-dependencies]
 automod.workspace = true
 strict-test-support.workspace = true
+
+# ─── Shared dependencies (populate here; members refer via `.workspace = true`) ─
+[workspace.dependencies]
+# Dependencies
+chrono = { version = "0.4", default-features = false, features = ["now"] }
+dissimilar = "1.0"
+glob = "0.3"
+serde_derive = "1.0.228"
+target-triple = "1.0"
+termcolor = "1.4.1"
+
+# Dev Dependencies
+automod = "1.0.17"
+libfuzzer-sys = "0.4"
+
+# ─── Shared dependencies (populate here; members refer via `.workspace = true`) ─
+
+# strict-* ecosystem deps (comment out if unused, do not remove)
+agents-md = { version = "0.1.0", git = "ssh://git@github.com/earthlings-dev/agents-md-rs.git", branch = "main" }
+bpaf = { git = "ssh://git@github.com/strict-rs/strict-bpaf.git", branch = "sync", version = "0.10", default-features = false }
+strict-xtask-core = { version = "0.1.0", git = "ssh://git@github.com/earthlings-dev/strict-xtask-core-rs.git", branch = "main" }
+strict-xtask-cargo = { version = "0.1.0", git = "ssh://git@github.com/earthlings-dev/strict-xtask-cargo-rs.git", branch = "main" }
+strict-xtask-agents-md = { version = "0.1.0", git = "ssh://git@github.com/earthlings-dev/strict-xtask-agents-md-rs.git", branch = "main" }
+mutant_fleet = { version = "0.1.0", git = "ssh://git@github.com/earthlings-dev/rust-mutant-fleet.git", branch = "main" }
+strict-test-support = { version = "0.1.0", git = "ssh://git@github.com/earthlings-dev/strict-test-support-rs.git", branch = "main" }
+trybuild = { git = "ssh://git@github.com/strict-rs/strict-trybuild.git", branch = "strict", version = "1" }
+syn = { version = "2", features = ["full", "visit"] }
+proc-macro2 = { version = "1", features = ["span-locations"] }
+serde = { version = "1", features = ["derive"] }
+thiserror = "2"
+serde_json = "1"
+cargo_metadata = "0.23"
+ignore = "0.4"
+globset = "0.4"
+toml = "1.1"
+toml_edit = "0.25"
+anstyle = "1"
+snapbox = { version = "1.2", default-features = false, features = ["diff"] }
+parking_lot = "0.12"
+
+[patch.crates-io]
+
+# strict-proptest (comment out if unused, do not remove)
+# proptest = { version = "1.11.0", git = "ssh://git@github.com/strict-rs/strict-proptest.git", branch = "upgrade" }
+# proptest-macro = { version = "0.5.0", git = "ssh://git@github.com/strict-rs/strict-proptest.git", branch = "upgrade" }
+# proptest-state-machine = { version = "0.8", git = "ssh://git@github.com/strict-rs/strict-proptest.git", branch = "upgrade" }
+# proptest-derive = { version = "0.8", git = "ssh://git@github.com/strict-rs/strict-proptest.git", branch = "upgrade" }
+
+# strict-trybuild (comment out if unused, do not remove)
+# trybuild = { git = "ssh://git@github.com/strict-rs/strict-trybuild.git", branch = "strict", version = "1" }
+
+# strict-bpaf (comment out if unused, do not remove)
+bpaf = { git = "ssh://git@github.com/strict-rs/strict-bpaf.git", branch = "sync", version = "0.10" }
+# bpaf_derive = { git = "ssh://git@github.com/strict-rs/strict-bpaf.git", branch = "sync", version = "0.10.0" }
+# bpaf_cauwugo = { git = "ssh://git@github.com/strict-rs/strict-bpaf.git", branch = "sync", version = "0.10.0" }
+
+# strict-tracing (comment out if unused, do not remove)
+# tracing = { git = "ssh://git@github.com/strict-rs/strict-tracing.git", branch = "strict", version = "0.1.44" }
+# tracing-appender = { git = "ssh://git@github.com/strict-rs/strict-tracing.git", branch = "strict", version = "0.2.5" }
+# tracing-attributes = { git = "ssh://git@github.com/strict-rs/strict-tracing.git", branch = "strict", version = "0.1.31" }
+# tracing-core = { git = "ssh://git@github.com/strict-rs/strict-tracing.git", branch = "strict", version = "0.1.36" }
+# tracing-error = { git = "ssh://git@github.com/strict-rs/strict-tracing.git", branch = "strict", version = "0.2.1" }
+# tracing-flame = { git = "ssh://git@github.com/strict-rs/strict-tracing.git", branch = "strict", version = "0.2.0" }
+# tracing-futures = { git = "ssh://git@github.com/strict-rs/strict-tracing.git", branch = "strict", version = "0.2.5" }
+# tracing-journald = { git = "ssh://git@github.com/strict-rs/strict-tracing.git", branch = "strict", version = "0.3.2" }
+# tracing-log = { git = "ssh://git@github.com/strict-rs/strict-tracing.git", branch = "strict", version = "0.2.0" }
+# tracing-mock = { git = "ssh://git@github.com/strict-rs/strict-tracing.git", branch = "strict", version = "0.1.0-beta.3" }
+# tracing-serde = { git = "ssh://git@github.com/strict-rs/strict-tracing.git", branch = "strict", version = "0.2.0" }
+# tracing-subscriber = { git = "ssh://git@github.com/strict-rs/strict-tracing.git", branch = "strict", version = "0.3.23" }
+# tracing-test = { git = "ssh://git@github.com/strict-rs/strict-tracing.git", branch = "strict", version = "0.1.0" }
+# tracing-tower = { git = "ssh://git@github.com/strict-rs/strict-tracing.git", branch = "strict", version = "0.1.0" }
 
 [lints]
 workspace = true

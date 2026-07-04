@@ -235,18 +235,33 @@
 
 #![doc(html_root_url = "https://docs.rs/trybuild/1.0.117")]
 #![cfg_attr(
-    not(check_cfg),
-    allow(
-        unexpected_cfgs,
-        reason = "the check_cfg cfg is set by build.rs only when the compiler supports it"
-    )
+  not(check_cfg),
+  allow(
+    unexpected_cfgs,
+    reason = "the check_cfg cfg is set by build.rs only when the compiler supports it"
+  )
 )]
 
 mod internal;
 
-pub use crate::internal::{
-    BuildError, BuildOutput, CaseReport, CompileFailure, DiagnosticsError, Expected,
-    MetadataFailure, MismatchDetail, Outcome, OverwriteDetail, PassDetail, ProjectError, Report,
-    RunOutput, RunnerError, SysError, TestCases, TryBuildError, UnexpectedSuccess, Update,
-    WipDetail,
-};
+pub use crate::internal::BuildError;
+pub use crate::internal::BuildOutput;
+pub use crate::internal::CaseReport;
+pub use crate::internal::CompileFailure;
+pub use crate::internal::DiagnosticsError;
+pub use crate::internal::Expected;
+pub use crate::internal::MetadataFailure;
+pub use crate::internal::MismatchDetail;
+pub use crate::internal::Outcome;
+pub use crate::internal::OverwriteDetail;
+pub use crate::internal::PassDetail;
+pub use crate::internal::ProjectError;
+pub use crate::internal::Report;
+pub use crate::internal::RunOutput;
+pub use crate::internal::RunnerError;
+pub use crate::internal::SysError;
+pub use crate::internal::TestCases;
+pub use crate::internal::TryBuildError;
+pub use crate::internal::UnexpectedSuccess;
+pub use crate::internal::Update;
+pub use crate::internal::WipDetail;

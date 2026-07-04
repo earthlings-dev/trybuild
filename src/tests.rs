@@ -44,5 +44,5 @@ macro_rules! test_normalize {
 }
 
 mod tests {
-    automod::dir!("src/tests");
+  automod::dir!("src/tests");
 }

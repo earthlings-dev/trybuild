@@ -34,11 +34,16 @@ external-default-features  = "allow"
 
 [sources]
 unknown-registry = "deny"
-unknown-git      = "deny"
-allow-registry   = ["https://github.com/rust-lang/crates.io-index"]
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
 allow-git        = [
-    "ssh://git@github.com/earthlings-dev/bpaf.git",
+    "ssh://git@github.com/strict-rs/strict-bpaf.git",
+    "ssh://git@github.com/earthlings-dev/agents-md-rs.git",
     "ssh://git@github.com/earthlings-dev/strict-test-support-rs.git",
+    "ssh://git@github.com/earthlings-dev/strict-xtask-agents-md-rs.git",
+    "ssh://git@github.com/earthlings-dev/strict-xtask-core-rs.git",
+    "ssh://git@github.com/earthlings-dev/rust-mutant-fleet.git",
+    "ssh://git@github.com/strict-rs/strict-trybuild.git",
 ]
 
 [advisories]

@@ -2,124 +2,131 @@ name: CI
 
 on:
   push:
+    branches: [main]
   pull_request:
-  workflow_dispatch:
-  schedule: [cron: "40 1 * * *"]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
 
 env:
-  RUSTFLAGS: -Dwarnings
+  CARGO_TERM_COLOR: always
 
 jobs:
-  pre_ci:
-    uses: dtolnay/.github/.github/workflows/pre_ci.yml@master
-
-  test:
-    name: Rust ${{matrix.rust}}
-    needs: pre_ci
-    if: needs.pre_ci.outputs.continue
+  check:
+    name: ci
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: Swatinem/rust-cache@v2
+
+      # CI calls xtask directly: GitHub sets CI=true, which satisfies the
+      # `just`/CI invocation guard. `cargo xtask init` is the single source of
+      # truth for toolchains, components, targets, and every cargo tool
+      # (cargo-dupes + tokei included) — the workflow duplicates no tool list.
+      - name: Bootstrap toolchains, components, targets, and tools
+        run: cargo xtask init
+
+      # Scope -Dwarnings to the gate so it does not apply while `init` compiles
+      # third-party tools from source.
+      - name: cargo xtask ci
+        env:
+          RUSTFLAGS: "-Dwarnings"
+        run: cargo xtask ci
+
+  # Non-Linux legs validate the platform-dependent surface: check + the full
+  # test suite everywhere, and clippy on Windows only — the workspace carries
+  # real #[cfg(windows)] code (cmd-script fakes, hook installation) that Linux
+  # clippy never compiles, while no macOS-specific cfg code exists (macOS
+  # minutes also bill ~10x Linux; add a mac lint step when such code appears).
+  # fmt / doc / audit / cq stay Linux-only — they are platform-neutral gates.
+  platform:
+    name: platform (${{ matrix.os }})
     strategy:
       fail-fast: false
       matrix:
-        rust: [nightly, beta, stable, 1.85.0]
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@master
+      - uses: actions/checkout@v6
+
+      # rust-cache keys per-OS automatically, so each leg warms its own cache.
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Bootstrap toolchains, components, targets, and tools
+        run: cargo xtask init
+
+      - name: cargo xtask check
+        env:
+          RUSTFLAGS: "-Dwarnings"
+        run: cargo xtask check
+
+      - name: cargo xtask lint (windows-only cfg surface)
+        if: runner.os == 'Windows'
+        env:
+          RUSTFLAGS: "-Dwarnings"
+        run: cargo xtask lint
+
+      - name: cargo xtask test-all
+        env:
+          RUSTFLAGS: "-Dwarnings"
+        run: cargo xtask test-all
+
+  # Continuously validates the zig-linked cross-compilation pattern: every
+  # default target builds from Linux, and the Windows artifact is handed to
+  # cross-smoke for a native run.
+  cross:
+    name: cross (zigbuild)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: Swatinem/rust-cache@v2
+
+      # zig is the one cross tool `cargo xtask init` cannot install (it is not
+      # a cargo package); the maintained setup action provides it.
+      - uses: mlugg/setup-zig@v2
+
+      - name: Bootstrap toolchains, components, targets, and tools
+        run: cargo xtask init
+
+      - name: cargo xtask cross
+        run: cargo xtask cross
+
+      - uses: actions/upload-artifact@v7
         with:
-          toolchain: ${{matrix.rust}}
-      - name: Enable type layout randomization
-        run: echo RUSTFLAGS=${RUSTFLAGS}\ -Zrandomize-layout >> $GITHUB_ENV
-        if: matrix.rust == 'nightly'
-      - run: cargo test
-      - uses: actions/upload-artifact@v6
-        if: matrix.rust == 'nightly' && always()
+          name: xtask-windows-gnu
+          path: target/x86_64-pc-windows-gnu/release/xtask.exe
+          retention-days: 7
+
+      # The arm64 Windows artifact is built and retained but not smoke-run:
+      # GitHub's hosted windows-11-arm runners are public-repo-only, and the
+      # x86_64 smoke job already proves the zig-link pattern end to end.
+      - uses: actions/upload-artifact@v7
         with:
-          name: Cargo.lock
-          path: Cargo.lock
-        continue-on-error: true
+          name: xtask-windows-gnullvm-arm64
+          path: target/aarch64-pc-windows-gnullvm/release/xtask.exe
+          retention-days: 7
 
-  xplat:
-    name: ${{matrix.name}}
-    needs: pre_ci
-    if: needs.pre_ci.outputs.continue
-    runs-on: ${{matrix.os}}-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: macOS
-            os: macos
-          - name: Windows
-            os: windows
-    timeout-minutes: 45
+  # Proves the zig-linked windows-gnu binary actually runs on Windows — the
+  # cross pattern is validated end to end, not assumed. `--help` renders
+  # before the invocation guard and exits 0.
+  cross-smoke:
+    name: cross-smoke (windows)
+    needs: cross
+    runs-on: windows-latest
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@nightly
-      - name: Enable type layout randomization
-        run: echo RUSTFLAGS=${RUSTFLAGS}\ -Zrandomize-layout >> $GITHUB_ENV
-        shell: bash
-      - run: cargo test
+      - uses: actions/download-artifact@v8
+        with:
+          name: xtask-windows-gnu
 
-  minimal:
-    name: Minimal versions
-    needs: pre_ci
-    if: needs.pre_ci.outputs.continue
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
-    steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@nightly
-      - run: cargo generate-lockfile -Z minimal-versions
-      - run: cargo check --locked
-
-  doc:
-    name: Documentation
-    needs: pre_ci
-    if: needs.pre_ci.outputs.continue
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
-    env:
-      RUSTDOCFLAGS: -Dwarnings
-    steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@nightly
-      - uses: dtolnay/install@cargo-docs-rs
-      - run: cargo docs-rs
-
-  clippy:
-    name: Clippy
-    runs-on: ubuntu-latest
-    if: github.event_name != 'pull_request'
-    timeout-minutes: 45
-    steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@clippy
-      - run: cargo clippy --tests -- -Dclippy::all -Dclippy::pedantic
-
-  outdated:
-    name: Outdated
-    runs-on: ubuntu-latest
-    if: github.event_name != 'pull_request'
-    timeout-minutes: 45
-    steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: dtolnay/install@cargo-outdated
-      - run: cargo outdated --workspace --exit-code 1
-      - run: cargo outdated --manifest-path fuzz/Cargo.toml --exit-code 1
-
-  fuzz:
-    name: Fuzz
-    needs: pre_ci
-    if: needs.pre_ci.outputs.continue
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
-    steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@nightly
-      - uses: dtolnay/install@cargo-fuzz
-      - run: cargo fuzz check
+      - name: Run the cross-compiled binary natively
+        run: ./xtask.exe --help

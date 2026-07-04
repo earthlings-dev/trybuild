@@ -1,6 +1,6 @@
 # The test-failure model (corrected) — Drop was never a blocker
 
-> Status: **review draft.** Supersedes Part 1 (the (i)/(ii) "Drop dilemma") of `drop-semantics-and-resolved-verifications.md`. That doc's Part 2 (resolved verifications) remains valid. Grounded in `strict-test-support` source at `~/earthlings/strict-test-support-rs`.
+> Status: **review draft.** Supersedes Part 1 (the (i)/(ii) "Drop dilemma") of `drop-semantics-and-resolved-verifications.md`. That doc's Part 2 (resolved verifications) remains valid. Grounded in `strict-test-support` source at `~/strict-rs/strict-test-support-rs`.
 
 ## The invalid premise
 
