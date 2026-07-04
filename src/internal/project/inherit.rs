@@ -3,12 +3,10 @@
 
 use std::fmt;
 
+use serde::de;
 use serde::de::Deserialize;
 use serde::de::Deserializer;
 use serde::de::Visitor;
-use serde::de::{
-  self,
-};
 use serde_derive::Deserialize;
 
 /// The `{ workspace = true }` table form of an inherited `package.edition`.

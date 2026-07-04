@@ -2,6 +2,7 @@
 //! synthesized test binaries, running pass-tests, and reading `cargo metadata`.
 
 use std::env;
+use std::ffi::OsString;
 use std::fs::File;
 use std::io;
 use std::iter;
@@ -108,10 +109,28 @@ fn cargo_target_dir(project: &Project) -> impl Iterator<Item = (&'static str, Pa
   reason = "locating the crate-under-test manifest is a distinct domain step the orchestrator calls by name"
 )]
 pub(in crate::internal) fn manifest_dir() -> error::Result<Directory> {
-  if let Some(manifest_dir) = env::var_os("CARGO_MANIFEST_DIR") {
+  manifest_dir_from(env::var_os("CARGO_MANIFEST_DIR"))
+}
+
+/// Locates the crate-under-test manifest directory from an injected
+/// `CARGO_MANIFEST_DIR` value, or from the current directory when absent.
+#[allow(
+  clippy::single_call_fn,
+  reason = "the injectable manifest-dir policy is split from the environment-reading shell for focused unit coverage"
+)]
+fn manifest_dir_from(configured_manifest_dir: Option<OsString>) -> error::Result<Directory> {
+  if let Some(manifest_dir) = configured_manifest_dir {
     return Ok(Directory::from(manifest_dir));
   }
-  let mut dir = Directory::current().map_err(SysError::Io)?;
+  find_manifest_dir(Directory::current().map_err(SysError::Io)?)
+}
+
+/// Walks up from `dir` until a directory containing `Cargo.toml` is found.
+#[allow(
+  clippy::single_call_fn,
+  reason = "the manifest walk is a pure filesystem policy seam tested apart from CARGO_MANIFEST_DIR parsing"
+)]
+fn find_manifest_dir(mut dir: Directory) -> error::Result<Directory> {
   loop {
     if dir.join("Cargo.toml").exists() {
       return Ok(dir);
@@ -343,5 +362,275 @@ fn target() -> Vec<&'static str> {
     vec![]
   } else {
     vec!["--target", TARGET]
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use std::collections::BTreeMap as Map;
+  use std::fs;
+  #[cfg(unix)]
+  use std::os::unix::fs::PermissionsExt as _;
+  use std::path::Path;
+  use std::path::PathBuf;
+  use std::result::Result as StdResult;
+
+  use strict_test_support::TempDir;
+  use strict_test_support::TestFailure;
+  use strict_test_support::ensure;
+  use strict_test_support::ensure_all;
+  use strict_test_support::ensure_ok_source;
+
+  use super::*;
+  use crate::internal::project::KeepGoing;
+  use crate::internal::project::Selected;
+  use crate::internal::project::manifest::Bin;
+  use crate::internal::project::manifest::Edition;
+  use crate::internal::project::manifest::Manifest;
+  use crate::internal::project::manifest::Package;
+  use crate::internal::sys::env::Update;
+
+  fn project(fixture: &TempDir, project_name: &str, selected: Selected, features: Option<Vec<String>>) -> Project {
+    Project {
+      dir: Directory::new(fixture.child("project")),
+      source_dir: Directory::new(fixture.child("source")),
+      target_dir: Directory::new(fixture.child("target")),
+      name: project_name.to_owned(),
+      update: Update::Verify,
+      selected,
+      features,
+      workspace: Directory::new(fixture.child("workspace")),
+      path_dependencies: Vec::new(),
+      manifest: Manifest {
+        cargo_features: Vec::new(),
+        package:        Package {
+          name:     project_name.to_owned(),
+          version:  "0.0.0".to_owned(),
+          edition:  Edition::default(),
+          resolver: None,
+          publish:  false,
+        },
+        features:       iter::once(("extra".to_owned(), Vec::new())).collect(),
+        dependencies:   Map::new(),
+        target:         Map::new(),
+        bins:           vec![Bin {
+          name: Name(project_name.to_owned()),
+          path: PathBuf::from("main.rs"),
+        }],
+        workspace:      None,
+        patch:          Map::new(),
+        replace:        Map::new(),
+      },
+      keep_going: KeepGoing::No,
+    }
+  }
+
+  fn write_project(project: &Project, main_rs: &str) -> StdResult<(), TestFailure> {
+    ensure_ok_source(fs::create_dir_all(project.dir.as_ref()), "project dir can be created")?;
+    ensure_ok_source(fs::create_dir_all(project.workspace.as_ref()), "workspace dir can be created")?;
+    ensure_ok_source(
+      fs::write(
+        project.dir.join("Cargo.toml"),
+        format!(
+          r#"[package]
+name = "fixture"
+version = "0.0.0"
+edition = "2024"
+
+[features]
+extra = []
+
+[[bin]]
+name = "{}"
+path = "main.rs"
+"#,
+          project.name
+        ),
+      ),
+      "project manifest can be written",
+    )?;
+    ensure_ok_source(fs::write(project.dir.join("main.rs"), main_rs), "project main can be written")
+  }
+
+  #[test]
+  fn manifest_dir_from_uses_the_env_value_when_present() -> StdResult<(), TestFailure> {
+    let fixture = TempDir::new("manifest-env")?;
+    let found = ensure_ok_source(
+      manifest_dir_from(Some(fixture.path().to_path_buf().into_os_string())),
+      "manifest dir resolves from the injected env value",
+    )?;
+
+    ensure(
+      found.as_ref() == Directory::new(fixture.path()).as_ref(),
+      "injected CARGO_MANIFEST_DIR is used directly",
+    )
+  }
+
+  #[test]
+  fn manifest_dir_from_walks_from_current_dir_when_env_is_absent() -> StdResult<(), TestFailure> {
+    let found = ensure_ok_source(
+      manifest_dir_from(None),
+      "manifest dir falls back to walking from the current directory",
+    )?;
+
+    ensure(found.join("Cargo.toml").exists(), "the fallback manifest dir contains Cargo.toml")
+  }
+
+  #[test]
+  fn find_manifest_dir_walks_up_to_the_nearest_manifest() -> StdResult<(), TestFailure> {
+    let fixture = TempDir::new("manifest-walk")?;
+    let nested = fixture.child("nested/deeper");
+    ensure_ok_source(fs::create_dir_all(&nested), "nested fixture directory can be created")?;
+    ensure_ok_source(
+      fs::write(fixture.child("Cargo.toml"), "[package]\nname = \"fixture\"\n"),
+      "fixture manifest can be written",
+    )?;
+
+    let found = ensure_ok_source(
+      find_manifest_dir(Directory::new(&nested)),
+      "manifest dir walk finds the nearest Cargo.toml",
+    )?;
+
+    ensure(
+      found.as_ref() == Directory::new(fixture.path()).as_ref(),
+      "manifest dir walk returns the ancestor containing Cargo.toml",
+    )
+  }
+
+  #[test]
+  fn find_manifest_dir_errors_when_no_manifest_exists() -> StdResult<(), TestFailure> {
+    let fixture = TempDir::new("manifest-missing")?;
+
+    ensure_all(&[
+      (
+        find_manifest_dir(Directory::new(fixture.path())).is_err(),
+        "manifest dir walk reports an error when no Cargo.toml is found",
+      ),
+      (
+        !fixture.child("Cargo.toml").exists(),
+        "the missing-manifest fixture stays free of Cargo.toml",
+      ),
+    ])
+  }
+
+  #[test]
+  fn build_dependencies_generates_lockfile_and_records_keep_going() -> StdResult<(), TestFailure> {
+    let fixture = TempDir::new("build-dependencies")?;
+    let mut project = project(&fixture, "demo-tests", Selected::CompileFailOnly, Some(vec!["extra".to_owned()]));
+    write_project(&project, "fn main() {}\n")?;
+
+    let result = build_dependencies(&mut project);
+
+    ensure_all(&[
+      (result.is_ok(), "dependency build succeeds for a tiny generated project"),
+      (
+        project.dir.join("Cargo.lock").exists(),
+        "missing workspace lockfiles are regenerated inside the generated project",
+      ),
+      (
+        project.keep_going == KeepGoing::Yes,
+        "modern cargo support for --keep-going is recorded",
+      ),
+    ])
+  }
+
+  #[test]
+  fn build_dependencies_reports_dependency_build_errors() -> StdResult<(), TestFailure> {
+    let fixture = TempDir::new("build-dependencies-error")?;
+    let mut project = project(&fixture, "demo-tests", Selected::CompileFailOnly, None);
+    write_project(&project, "compile_error!(\"dependency build failed\");\n")?;
+
+    ensure(
+      build_dependencies(&mut project).is_err(),
+      "dependency build failures are captured as data",
+    )
+  }
+
+  #[test]
+  fn build_dependencies_ignores_non_missing_workspace_lockfile_errors() -> StdResult<(), TestFailure> {
+    let fixture = TempDir::new("build-dependencies-lock-error")?;
+    let mut project = project(&fixture, "demo-tests", Selected::CompileFailOnly, None);
+    write_project(&project, "fn main() {}\n")?;
+    let workspace_file = fixture.child("workspace-file");
+    ensure_ok_source(fs::write(&workspace_file, ""), "workspace-file fixture can be written")?;
+    project.workspace = Directory::new(workspace_file);
+
+    ensure(
+      build_dependencies(&mut project).is_ok(),
+      "non-missing lockfile open errors are ignored in favor of the cargo build result",
+    )
+  }
+
+  #[test]
+  fn run_test_falls_back_to_cargo_run_when_executable_is_absent() -> StdResult<(), TestFailure> {
+    let fixture = TempDir::new("run-test-cargo")?;
+    let project = project(&fixture, "demo-tests", Selected::PassOnly, None);
+    write_project(&project, "fn main() { println!(\"fallback\"); }\n")?;
+
+    let output = ensure_ok_source(
+      run_test(&project, &Name("demo-tests".to_owned()), None),
+      "cargo-run fallback succeeds for a tiny generated project",
+    )?;
+
+    ensure_all(&[
+      (output.status.success(), "cargo-run fallback exits successfully"),
+      (
+        String::from_utf8_lossy(&output.stdout).contains("fallback"),
+        "cargo-run fallback captures stdout",
+      ),
+    ])
+  }
+
+  #[test]
+  fn build_entrypoints_capture_single_and_batched_json_output() -> StdResult<(), TestFailure> {
+    let fixture = TempDir::new("build-entrypoints")?;
+    let compile_only = project(&fixture, "demo-tests", Selected::CompileFailOnly, None);
+    write_project(&compile_only, "fn main() {}\n")?;
+    let pass_build = project(&fixture, "demo-tests", Selected::PassOnly, None);
+
+    let single = ensure_ok_source(
+      build_test(&compile_only, &Name("demo-tests".to_owned())),
+      "single-test build entrypoint succeeds",
+    )?;
+    let batched_check = ensure_ok_source(build_all_tests(&compile_only), "batched compile-fail build entrypoint succeeds")?;
+    let batched_build = ensure_ok_source(build_all_tests(&pass_build), "batched pass-test build entrypoint succeeds")?;
+
+    ensure_all(&[
+      (single.status.success(), "single-test build exits successfully"),
+      (batched_check.status.success(), "batched compile-fail check exits successfully"),
+      (batched_build.status.success(), "batched pass-test build exits successfully"),
+    ])
+  }
+
+  #[cfg(unix)]
+  #[test]
+  fn run_test_prefers_reported_executable_paths() -> StdResult<(), TestFailure> {
+    let fixture = TempDir::new("run-test-executable")?;
+    let project = project(&fixture, "demo-tests", Selected::PassOnly, None);
+    ensure_ok_source(fs::create_dir_all(project.dir.as_ref()), "project dir can be created")?;
+    let executable = fixture.child("reported-executable.sh");
+    ensure_ok_source(
+      fs::write(&executable, "#!/bin/sh\nprintf direct\n"),
+      "reported executable can be written",
+    )?;
+    let mut permissions = ensure_ok_source(fs::metadata(&executable), "reported executable metadata can be read")?.permissions();
+    permissions.set_mode(0o755);
+    ensure_ok_source(
+      fs::set_permissions(&executable, permissions),
+      "reported executable can be made executable",
+    )?;
+
+    let output = ensure_ok_source(
+      run_test(&project, &Name("demo-tests".to_owned()), Some(Path::new(&executable))),
+      "reported executable path is runnable",
+    )?;
+
+    ensure_all(&[
+      (output.status.success(), "reported executable exits successfully"),
+      (
+        String::from_utf8_lossy(&output.stdout) == "direct",
+        "reported executable output is captured directly",
+      ),
+    ])
   }
 }

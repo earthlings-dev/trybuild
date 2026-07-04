@@ -119,3 +119,32 @@ pub(in crate::internal) enum KeepGoing {
   /// `--keep-going` is unsupported; build the bins one at a time.
   No,
 }
+
+#[cfg(test)]
+mod tests {
+  use std::result::Result as StdResult;
+
+  use strict_test_support::TestFailure;
+  use strict_test_support::ensure_all;
+
+  use super::*;
+
+  #[test]
+  fn selected_reports_registered_case_polarities() -> StdResult<(), TestFailure> {
+    let neither = Selected::from_flags(false, false);
+    let pass_only = Selected::from_flags(true, false);
+    let fail_only = Selected::from_flags(false, true);
+    let both = Selected::from_flags(true, true);
+
+    ensure_all(&[
+      (!neither.has_pass(), "neither selection has no pass tests"),
+      (!neither.both(), "neither selection does not require expected labels"),
+      (pass_only.has_pass(), "pass-only selection has pass tests"),
+      (!pass_only.both(), "pass-only selection does not require expected labels"),
+      (!fail_only.has_pass(), "compile-fail-only selection has no pass tests"),
+      (!fail_only.both(), "compile-fail-only selection does not require expected labels"),
+      (both.has_pass(), "mixed selection has pass tests"),
+      (both.both(), "mixed selection requires expected labels"),
+    ])
+  }
+}

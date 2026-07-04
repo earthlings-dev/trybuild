@@ -66,10 +66,18 @@ impl CanonicalPath {
 
 #[cfg(test)]
 mod tests {
+  use std::fs;
+
+  use strict_test_support::TempDir;
+  use strict_test_support::TestFailure;
+  use strict_test_support::ensure;
+  use strict_test_support::ensure_all;
+  use strict_test_support::ensure_ok_source;
+
   use super::*;
 
   #[test]
-  fn test_path_macro() -> Result<(), strict_test_support::TestFailure> {
+  fn test_path_macro() -> Result<(), TestFailure> {
     struct Project {
       dir: PathBuf,
     }
@@ -79,10 +87,25 @@ mod tests {
     };
 
     let cargo_dir = path!(project.dir / ".cargo" / "config.toml");
-    strict_test_support::ensure(
+    ensure(
       cargo_dir.as_path() == Path::new("../target/tests/.cargo/config.toml"),
       "path! builds the expected cargo config path",
     )?;
     Ok(())
+  }
+
+  #[test]
+  fn canonical_path_resolves_existing_paths_and_falls_back_for_missing() -> Result<(), TestFailure> {
+    let fixture = TempDir::new("canonical-path")?;
+    let source = fixture.child("source.rs");
+    ensure_ok_source(fs::write(&source, "fn main() {}\n"), "source fixture can be written")?;
+    let existing = CanonicalPath::new(&source);
+    let missing_path = fixture.child("missing.rs");
+    let missing = CanonicalPath::new(&missing_path);
+
+    ensure_all(&[
+      (existing.0.is_absolute(), "existing paths are canonicalized to an absolute path"),
+      (missing.0 == missing_path, "missing paths fall back to the original spelling"),
+    ])
   }
 }

@@ -90,6 +90,79 @@ mod r#impl {
   }
 }
 
+#[cfg(test)]
+mod tests {
+  use strict_test_support::TestFailure;
+  use strict_test_support::ensure;
+  #[cfg(all(feature = "diff", not(windows)))]
+  use strict_test_support::ensure_all;
+  #[cfg(all(feature = "diff", not(windows)))]
+  use strict_test_support::ensure_some;
+
+  use super::*;
+
+  #[cfg(all(feature = "diff", not(windows)))]
+  fn rendered_chunks(diff: &Diff<'_>, input: &str) -> Vec<String> {
+    diff
+      .iter(input)
+      .map(|chunk| match chunk {
+        Render::Common(text) => format!("common:{text}"),
+        Render::Unique(text) => format!("unique:{text}"),
+      })
+      .collect()
+  }
+
+  #[cfg(all(feature = "diff", not(windows)))]
+  #[test]
+  fn compute_declines_oversized_or_low_similarity_input() -> Result<(), TestFailure> {
+    let oversized = "x".repeat(2049);
+
+    ensure(Diff::compute(&oversized, "").is_none(), "large inputs skip diff computation")?;
+    ensure(
+      Diff::compute("aaaa\nbbbb\n", "xxxx\nyyyy\n").is_none(),
+      "low-similarity inputs skip diff computation",
+    )
+  }
+
+  #[cfg(all(feature = "diff", not(windows)))]
+  #[test]
+  fn iter_marks_unique_runs_for_each_side() -> Result<(), TestFailure> {
+    let expected = "prefix same X suffix same";
+    let actual = "prefix same Y suffix same";
+    let diff = ensure_some(Diff::compute(expected, actual), "similar snapshots produce a diff")?;
+    let expected_chunks = rendered_chunks(&diff, expected);
+    let actual_chunks = rendered_chunks(&diff, actual);
+
+    ensure_all(&[
+      (
+        expected_chunks.iter().any(|chunk| chunk == "unique:X"),
+        "expected-side iteration highlights deleted text",
+      ),
+      (
+        actual_chunks.iter().any(|chunk| chunk == "unique:Y"),
+        "actual-side iteration highlights inserted text",
+      ),
+      (
+        expected_chunks.iter().any(|chunk| chunk.starts_with("common:prefix same")),
+        "expected-side iteration keeps common prefix text",
+      ),
+      (
+        actual_chunks.iter().any(|chunk| chunk.ends_with("suffix same")),
+        "actual-side iteration keeps common suffix text",
+      ),
+    ])
+  }
+
+  #[cfg(any(not(feature = "diff"), windows))]
+  #[test]
+  fn inert_diff_declines_computation() -> Result<(), TestFailure> {
+    ensure(
+      Diff::compute("expected", "actual").is_none(),
+      "diff computation is disabled without the diff implementation",
+    )
+  }
+}
+
 /// The inert diff implementation used when the `diff` feature is disabled or on
 /// Windows; [`Diff`] is a placeholder and never constructed.
 #[cfg(any(not(feature = "diff"), windows))]

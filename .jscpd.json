@@ -17,6 +17,9 @@
     "**/target/**",
     "**/vendor/**"
   ],
+  "ignorePattern": [
+    "(?m)^\\s*use\\s+[^;]+;"
+  ],
   "format": [
     "rust"
   ],

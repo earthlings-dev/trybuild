@@ -54,7 +54,7 @@ toml.workspace = true
 
 [dev-dependencies]
 automod.workspace = true
-strict-test-support.workspace = true
+strict-test-support = { workspace = true, features = ["snapbox"] }
 
 # ─── Shared dependencies (populate here; members refer via `.workspace = true`) ─
 [workspace.dependencies]

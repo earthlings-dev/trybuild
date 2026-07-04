@@ -23,10 +23,11 @@ Scope: `src/` — the trybuild library. The repo-root `AGENTS.md` owns the comma
 
 ## Normalizer snapshot cases (`src/tests.rs` + `src/tests/`)
 
-Each `src/tests/<name>.rs` is one normalizer snapshot case, expanded by the `test_normalize!` macro in `src/tests.rs` (original stderr in, expected normalized output out, with optional `DIR`/`WORKSPACE`/`INPUT`/`TARGET` overrides). The cases are mounted via `automod` from `src/internal/diagnostics.rs` — deliberately not from `normalize.rs`, so the fuzz target's `#[path]` include of `normalize.rs` stays free of test wiring (see `fuzz/AGENTS.md`).
+Each `src/tests/<name>.rs` is one normalizer snapshot case, expanded by the name-driven `test_normalize!` macro in `src/tests.rs`. The raw compiler diagnostic input lives in `src/tests/inputs/<name>.stderr`; the expected preferred normalized output lives in `src/tests/snapshots/<name>.snap` and is compared with `strict_test_support::ensure_snapshot`. Case modules should contain only the fixture name plus optional `DIR`/`WORKSPACE`/`INPUT`/`TARGET` context overrides. The cases are mounted via `automod` from `src/internal/diagnostics.rs` — deliberately not from `normalize.rs`, so the fuzz target's `#[path]` include of `normalize.rs` stays free of test wiring (see `fuzz/AGENTS.md`).
 
 - `cargo test --lib` — all snapshot cases, fast (no cargo-inside-cargo).
 - `cargo test --lib internal::diagnostics::snapshots::tests::<name>` — a single case.
+- `SNAPSHOTS=overwrite cargo test --lib` — refresh committed `src/tests/snapshots/*.snap` files after a deliberate normalizer output change; review the diff afterward. Do not hand-write `.snap` files.
 
 ## Lint posture
 

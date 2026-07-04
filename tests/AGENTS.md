@@ -2,10 +2,13 @@
 
 Scope: `tests/` — trybuild's self-hosted integration suites and their `tests/ui/` fixtures. These spawn cargo-inside-cargo, so they are the slow part of `cargo test`; the fast normalizer-only loop is `cargo test --lib` (see `../src/AGENTS.md`). Root `AGENTS.md` owns the full command matrix and the snapshot-update workflow.
 
-## The two suites
+## The integration suites
 
 - `test.rs` (`cargo test --test test`) — runs trybuild against `tests/ui/*.rs` via `TestCases::run`. The fixtures deliberately pair files with mismatched expectations (e.g. a passing file registered as `compile_fail`), so a successful run of this harness is one where `run` reports an error — the test asserts `is_err()`, not a panic guard. The default test re-execs one ignored child through `strict_test_support::capture_ignored_test` so `run`'s terminal report stays captured instead of leaking into the parent `cargo test` output.
 - `try_run.rs` (`cargo test --test try_run`) — exercises the typed, terminal-free `TestCases::try_run` core: it asserts each fixture's outcome as data (both polarities of pass and compile-fail) and proves terminal silence, again via `capture_ignored_test`, using the `strict_test_support::ensure*` helpers.
+- `overwrite.rs` (`cargo test --test overwrite`) — drives `try_run(Update::Overwrite)` against absolute tempdir fixtures so overwrite mode can rewrite only throwaway `.stderr` files while also covering the all-`compile_fail` batched runner path.
+- `run_report.rs` (`cargo test --test run_report`) — captures ignored children that call `TestCases::run`, asserting setup-failure and no-test terminal reports without leaking output into the parent test run.
+- `foreign_project.rs` (`cargo test --test foreign_project`) — writes tiny crates outside this repository, points child runs at them with cwd + `CARGO_MANIFEST_DIR`, and exercises generated lockfile setup plus dependency-build failure reporting.
 
 ## Fixtures (`tests/ui/`)
 

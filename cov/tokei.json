@@ -1,22 +1,13 @@
 {
   "Just": {
-    "blanks": 98,
+    "blanks": 49,
     "children": {},
-    "code": 158,
-    "comments": 194,
+    "code": 79,
+    "comments": 97,
     "inaccurate": false,
     "reports": [
       {
         "name": "./justfile",
-        "stats": {
-          "blanks": 49,
-          "blobs": {},
-          "code": 79,
-          "comments": 97
-        }
-      },
-      {
-        "name": "./template-baselines/justfile",
         "stats": {
           "blanks": 49,
           "blobs": {},
@@ -189,7 +180,7 @@
       ]
     },
     "code": 0,
-    "comments": 1574,
+    "comments": 1579,
     "inaccurate": false,
     "reports": [
       {
@@ -198,7 +189,7 @@
           "blanks": 25,
           "blobs": {},
           "code": 0,
-          "comments": 46
+          "comments": 47
         }
       },
       {
@@ -439,7 +430,7 @@
           "blanks": 11,
           "blobs": {},
           "code": 0,
-          "comments": 22
+          "comments": 23
         }
       },
       {
@@ -457,7 +448,7 @@
           "blanks": 7,
           "blobs": {},
           "code": 0,
-          "comments": 10
+          "comments": 13
         }
       },
       {
@@ -534,7 +525,7 @@
     ]
   },
   "Rust": {
-    "blanks": 522,
+    "blanks": 824,
     "children": {
       "Markdown": [
         {
@@ -579,7 +570,7 @@
             "blanks": 7,
             "blobs": {},
             "code": 0,
-            "comments": 52
+            "comments": 55
           }
         },
         {
@@ -705,7 +696,7 @@
             "blanks": 1,
             "blobs": {},
             "code": 0,
-            "comments": 7
+            "comments": 8
           }
         },
         {
@@ -732,7 +723,7 @@
             "blanks": 1,
             "blobs": {},
             "code": 0,
-            "comments": 24
+            "comments": 27
           }
         },
         {
@@ -741,7 +732,7 @@
             "blanks": 0,
             "blobs": {},
             "code": 0,
-            "comments": 15
+            "comments": 17
           }
         },
         {
@@ -750,7 +741,7 @@
             "blanks": 8,
             "blobs": {},
             "code": 0,
-            "comments": 82
+            "comments": 89
           }
         },
         {
@@ -786,7 +777,7 @@
             "blanks": 3,
             "blobs": {},
             "code": 0,
-            "comments": 15
+            "comments": 16
           }
         },
         {
@@ -812,6 +803,33 @@
             },
             "code": 0,
             "comments": 178
+          }
+        },
+        {
+          "name": "./tests/foreign_project.rs",
+          "stats": {
+            "blanks": 1,
+            "blobs": {},
+            "code": 0,
+            "comments": 4
+          }
+        },
+        {
+          "name": "./tests/overwrite.rs",
+          "stats": {
+            "blanks": 0,
+            "blobs": {},
+            "code": 0,
+            "comments": 2
+          }
+        },
+        {
+          "name": "./tests/run_report.rs",
+          "stats": {
+            "blanks": 1,
+            "blobs": {},
+            "code": 0,
+            "comments": 3
           }
         },
         {
@@ -870,7 +888,7 @@
         }
       ]
     },
-    "code": 4761,
+    "code": 6445,
     "comments": 107,
     "inaccurate": false,
     "reports": [
@@ -886,7 +904,7 @@
               "comments": 1
             }
           },
-          "code": 12,
+          "code": 10,
           "comments": 1
         }
       },
@@ -941,23 +959,23 @@
       {
         "name": "./src/internal/build/cargo.rs",
         "stats": {
-          "blanks": 26,
+          "blanks": 58,
           "blobs": {
             "Markdown": {
               "blanks": 7,
               "blobs": {},
               "code": 0,
-              "comments": 52
+              "comments": 55
             }
           },
-          "code": 235,
+          "code": 489,
           "comments": 27
         }
       },
       {
         "name": "./src/internal/build/json.rs",
         "stats": {
-          "blanks": 16,
+          "blanks": 29,
           "blobs": {
             "Markdown": {
               "blanks": 1,
@@ -966,14 +984,14 @@
               "comments": 38
             }
           },
-          "code": 157,
+          "code": 307,
           "comments": 4
         }
       },
       {
         "name": "./src/internal/cases.rs",
         "stats": {
-          "blanks": 11,
+          "blanks": 18,
           "blobs": {
             "Markdown": {
               "blanks": 8,
@@ -982,7 +1000,7 @@
               "comments": 26
             }
           },
-          "code": 55,
+          "code": 95,
           "comments": 0
         }
       },
@@ -998,7 +1016,7 @@
               "comments": 17
             }
           },
-          "code": 31,
+          "code": 33,
           "comments": 5
         }
       },
@@ -1016,6 +1034,15 @@
           },
           "code": 739,
           "comments": 23
+        }
+      },
+      {
+        "name": "./src/internal/diagnostics/normalize_coverage.rs",
+        "stats": {
+          "blanks": 19,
+          "blobs": {},
+          "code": 208,
+          "comments": 0
         }
       },
       {
@@ -1069,7 +1096,7 @@
       {
         "name": "./src/internal/path.rs",
         "stats": {
-          "blanks": 13,
+          "blanks": 17,
           "blobs": {
             "Markdown": {
               "blanks": 2,
@@ -1078,14 +1105,14 @@
               "comments": 19
             }
           },
-          "code": 54,
+          "code": 73,
           "comments": 0
         }
       },
       {
         "name": "./src/internal/project.rs",
         "stats": {
-          "blanks": 12,
+          "blanks": 17,
           "blobs": {
             "Markdown": {
               "blanks": 0,
@@ -1094,14 +1121,14 @@
               "comments": 37
             }
           },
-          "code": 72,
+          "code": 96,
           "comments": 0
         }
       },
       {
         "name": "./src/internal/project/dependencies.rs",
         "stats": {
-          "blanks": 38,
+          "blanks": 66,
           "blobs": {
             "Markdown": {
               "blanks": 0,
@@ -1110,14 +1137,14 @@
               "comments": 65
             }
           },
-          "code": 289,
+          "code": 570,
           "comments": 2
         }
       },
       {
         "name": "./src/internal/project/features.rs",
         "stats": {
-          "blanks": 17,
+          "blanks": 34,
           "blobs": {
             "Markdown": {
               "blanks": 3,
@@ -1126,7 +1153,7 @@
               "comments": 19
             }
           },
-          "code": 97,
+          "code": 203,
           "comments": 7
         }
       },
@@ -1142,14 +1169,14 @@
               "comments": 5
             }
           },
-          "code": 42,
+          "code": 40,
           "comments": 0
         }
       },
       {
         "name": "./src/internal/project/manifest.rs",
         "stats": {
-          "blanks": 10,
+          "blanks": 16,
           "blobs": {
             "Markdown": {
               "blanks": 0,
@@ -1158,23 +1185,23 @@
               "comments": 33
             }
           },
-          "code": 80,
+          "code": 148,
           "comments": 0
         }
       },
       {
         "name": "./src/internal/project/rustflags.rs",
         "stats": {
-          "blanks": 6,
+          "blanks": 15,
           "blobs": {
             "Markdown": {
               "blanks": 1,
               "blobs": {},
               "code": 0,
-              "comments": 7
+              "comments": 8
             }
           },
-          "code": 20,
+          "code": 69,
           "comments": 2
         }
       },
@@ -1197,7 +1224,7 @@
       {
         "name": "./src/internal/report/diff.rs",
         "stats": {
-          "blanks": 15,
+          "blanks": 23,
           "blobs": {
             "Markdown": {
               "blanks": 0,
@@ -1206,62 +1233,30 @@
               "comments": 23
             }
           },
-          "code": 75,
+          "code": 140,
           "comments": 3
         }
       },
       {
         "name": "./src/internal/report/message.rs",
         "stats": {
-          "blanks": 36,
+          "blanks": 63,
           "blobs": {
             "Markdown": {
               "blanks": 1,
               "blobs": {},
               "code": 0,
-              "comments": 24
+              "comments": 27
             }
           },
-          "code": 278,
+          "code": 510,
           "comments": 1
         }
       },
       {
         "name": "./src/internal/report/reporter.rs",
         "stats": {
-          "blanks": 14,
-          "blobs": {
-            "Markdown": {
-              "blanks": 0,
-              "blobs": {},
-              "code": 0,
-              "comments": 15
-            }
-          },
-          "code": 81,
-          "comments": 2
-        }
-      },
-      {
-        "name": "./src/internal/runner.rs",
-        "stats": {
-          "blanks": 70,
-          "blobs": {
-            "Markdown": {
-              "blanks": 8,
-              "blobs": {},
-              "code": 0,
-              "comments": 82
-            }
-          },
-          "code": 667,
-          "comments": 7
-        }
-      },
-      {
-        "name": "./src/internal/runner/expand.rs",
-        "stats": {
-          "blanks": 11,
+          "blanks": 21,
           "blobs": {
             "Markdown": {
               "blanks": 0,
@@ -1270,7 +1265,39 @@
               "comments": 17
             }
           },
-          "code": 88,
+          "code": 119,
+          "comments": 2
+        }
+      },
+      {
+        "name": "./src/internal/runner.rs",
+        "stats": {
+          "blanks": 112,
+          "blobs": {
+            "Markdown": {
+              "blanks": 8,
+              "blobs": {},
+              "code": 0,
+              "comments": 89
+            }
+          },
+          "code": 1021,
+          "comments": 7
+        }
+      },
+      {
+        "name": "./src/internal/runner/expand.rs",
+        "stats": {
+          "blanks": 25,
+          "blobs": {
+            "Markdown": {
+              "blanks": 0,
+              "blobs": {},
+              "code": 0,
+              "comments": 17
+            }
+          },
+          "code": 180,
           "comments": 0
         }
       },
@@ -1293,7 +1320,7 @@
       {
         "name": "./src/internal/sys/directory.rs",
         "stats": {
-          "blanks": 12,
+          "blanks": 22,
           "blobs": {
             "Markdown": {
               "blanks": 1,
@@ -1302,30 +1329,30 @@
               "comments": 12
             }
           },
-          "code": 61,
+          "code": 124,
           "comments": 0
         }
       },
       {
         "name": "./src/internal/sys/env.rs",
         "stats": {
-          "blanks": 5,
+          "blanks": 12,
           "blobs": {
             "Markdown": {
               "blanks": 3,
               "blobs": {},
               "code": 0,
-              "comments": 15
+              "comments": 16
             }
           },
-          "code": 28,
+          "code": 72,
           "comments": 0
         }
       },
       {
         "name": "./src/internal/sys/flock.rs",
         "stats": {
-          "blanks": 18,
+          "blanks": 38,
           "blobs": {
             "Markdown": {
               "blanks": 2,
@@ -1334,7 +1361,7 @@
               "comments": 28
             }
           },
-          "code": 157,
+          "code": 274,
           "comments": 11
         }
       },
@@ -1366,7 +1393,7 @@
         "stats": {
           "blanks": 1,
           "blobs": {},
-          "code": 44,
+          "code": 41,
           "comments": 3
         }
       },
@@ -1375,7 +1402,7 @@
         "stats": {
           "blanks": 0,
           "blobs": {},
-          "code": 37,
+          "code": 1,
           "comments": 0
         }
       },
@@ -1384,7 +1411,7 @@
         "stats": {
           "blanks": 0,
           "blobs": {},
-          "code": 150,
+          "code": 1,
           "comments": 0
         }
       },
@@ -1393,7 +1420,7 @@
         "stats": {
           "blanks": 0,
           "blobs": {},
-          "code": 20,
+          "code": 1,
           "comments": 0
         }
       },
@@ -1402,7 +1429,7 @@
         "stats": {
           "blanks": 0,
           "blobs": {},
-          "code": 35,
+          "code": 1,
           "comments": 0
         }
       },
@@ -1411,7 +1438,7 @@
         "stats": {
           "blanks": 0,
           "blobs": {},
-          "code": 26,
+          "code": 1,
           "comments": 0
         }
       },
@@ -1420,7 +1447,7 @@
         "stats": {
           "blanks": 0,
           "blobs": {},
-          "code": 55,
+          "code": 4,
           "comments": 0
         }
       },
@@ -1429,7 +1456,7 @@
         "stats": {
           "blanks": 0,
           "blobs": {},
-          "code": 7,
+          "code": 1,
           "comments": 0
         }
       },
@@ -1438,7 +1465,7 @@
         "stats": {
           "blanks": 0,
           "blobs": {},
-          "code": 29,
+          "code": 6,
           "comments": 0
         }
       },
@@ -1447,7 +1474,7 @@
         "stats": {
           "blanks": 0,
           "blobs": {},
-          "code": 43,
+          "code": 1,
           "comments": 0
         }
       },
@@ -1456,7 +1483,7 @@
         "stats": {
           "blanks": 0,
           "blobs": {},
-          "code": 20,
+          "code": 1,
           "comments": 0
         }
       },
@@ -1465,7 +1492,7 @@
         "stats": {
           "blanks": 0,
           "blobs": {},
-          "code": 41,
+          "code": 1,
           "comments": 0
         }
       },
@@ -1474,7 +1501,7 @@
         "stats": {
           "blanks": 0,
           "blobs": {},
-          "code": 27,
+          "code": 1,
           "comments": 0
         }
       },
@@ -1483,7 +1510,7 @@
         "stats": {
           "blanks": 0,
           "blobs": {},
-          "code": 42,
+          "code": 1,
           "comments": 0
         }
       },
@@ -1492,7 +1519,7 @@
         "stats": {
           "blanks": 0,
           "blobs": {},
-          "code": 16,
+          "code": 5,
           "comments": 0
         }
       },
@@ -1501,7 +1528,7 @@
         "stats": {
           "blanks": 0,
           "blobs": {},
-          "code": 20,
+          "code": 5,
           "comments": 0
         }
       },
@@ -1510,7 +1537,7 @@
         "stats": {
           "blanks": 0,
           "blobs": {},
-          "code": 21,
+          "code": 4,
           "comments": 0
         }
       },
@@ -1519,7 +1546,7 @@
         "stats": {
           "blanks": 0,
           "blobs": {},
-          "code": 39,
+          "code": 1,
           "comments": 0
         }
       },
@@ -1528,7 +1555,7 @@
         "stats": {
           "blanks": 0,
           "blobs": {},
-          "code": 31,
+          "code": 4,
           "comments": 0
         }
       },
@@ -1537,7 +1564,7 @@
         "stats": {
           "blanks": 0,
           "blobs": {},
-          "code": 29,
+          "code": 1,
           "comments": 0
         }
       },
@@ -1546,7 +1573,7 @@
         "stats": {
           "blanks": 0,
           "blobs": {},
-          "code": 85,
+          "code": 1,
           "comments": 0
         }
       },
@@ -1555,7 +1582,7 @@
         "stats": {
           "blanks": 0,
           "blobs": {},
-          "code": 23,
+          "code": 4,
           "comments": 0
         }
       },
@@ -1564,7 +1591,55 @@
         "stats": {
           "blanks": 0,
           "blobs": {},
-          "code": 25,
+          "code": 6,
+          "comments": 0
+        }
+      },
+      {
+        "name": "./tests/foreign_project.rs",
+        "stats": {
+          "blanks": 11,
+          "blobs": {
+            "Markdown": {
+              "blanks": 1,
+              "blobs": {},
+              "code": 0,
+              "comments": 4
+            }
+          },
+          "code": 113,
+          "comments": 0
+        }
+      },
+      {
+        "name": "./tests/overwrite.rs",
+        "stats": {
+          "blanks": 9,
+          "blobs": {
+            "Markdown": {
+              "blanks": 0,
+              "blobs": {},
+              "code": 0,
+              "comments": 2
+            }
+          },
+          "code": 72,
+          "comments": 0
+        }
+      },
+      {
+        "name": "./tests/run_report.rs",
+        "stats": {
+          "blanks": 7,
+          "blobs": {
+            "Markdown": {
+              "blanks": 1,
+              "blobs": {},
+              "code": 0,
+              "comments": 3
+            }
+          },
+          "code": 69,
           "comments": 0
         }
       },
@@ -1973,10 +2048,10 @@
     ]
   },
   "TOML": {
-    "blanks": 141,
+    "blanks": 122,
     "children": {},
-    "code": 1184,
-    "comments": 411,
+    "code": 953,
+    "comments": 333,
     "inaccurate": false,
     "reports": [
       {
@@ -2018,10 +2093,10 @@
       {
         "name": "./fuzz/Cargo.toml",
         "stats": {
-          "blanks": 37,
+          "blanks": 38,
           "blobs": {},
           "code": 275,
-          "comments": 98
+          "comments": 102
         }
       },
       {
@@ -2052,51 +2127,6 @@
         }
       },
       {
-        "name": "./template-baselines/clippy.toml",
-        "stats": {
-          "blanks": 9,
-          "blobs": {},
-          "code": 126,
-          "comments": 42
-        }
-      },
-      {
-        "name": "./template-baselines/deny.toml",
-        "stats": {
-          "blanks": 4,
-          "blobs": {},
-          "code": 38,
-          "comments": 9
-        }
-      },
-      {
-        "name": "./template-baselines/dupes.toml",
-        "stats": {
-          "blanks": 3,
-          "blobs": {},
-          "code": 10,
-          "comments": 16
-        }
-      },
-      {
-        "name": "./template-baselines/rust-toolchain.toml",
-        "stats": {
-          "blanks": 0,
-          "blobs": {},
-          "code": 4,
-          "comments": 4
-        }
-      },
-      {
-        "name": "./template-baselines/rustfmt.toml",
-        "stats": {
-          "blanks": 4,
-          "blobs": {},
-          "code": 53,
-          "comments": 11
-        }
-      },
-      {
         "name": "./xtask/Cargo.toml",
         "stats": {
           "blanks": 6,
@@ -2108,20 +2138,11 @@
     ]
   },
   "Total": {
-    "blanks": 1648,
+    "blanks": 1884,
     "children": {
       "Just": [
         {
           "name": "./justfile",
-          "stats": {
-            "blanks": 49,
-            "blobs": {},
-            "code": 79,
-            "comments": 97
-          }
-        },
-        {
-          "name": "./template-baselines/justfile",
           "stats": {
             "blanks": 49,
             "blobs": {},
@@ -2137,7 +2158,7 @@
             "blanks": 25,
             "blobs": {},
             "code": 0,
-            "comments": 46
+            "comments": 47
           }
         },
         {
@@ -2378,7 +2399,7 @@
             "blanks": 11,
             "blobs": {},
             "code": 0,
-            "comments": 22
+            "comments": 23
           }
         },
         {
@@ -2396,7 +2417,7 @@
             "blanks": 7,
             "blobs": {},
             "code": 0,
-            "comments": 10
+            "comments": 13
           }
         },
         {
@@ -2484,7 +2505,7 @@
                 "comments": 1
               }
             },
-            "code": 12,
+            "code": 10,
             "comments": 1
           }
         },
@@ -2539,23 +2560,23 @@
         {
           "name": "./src/internal/build/cargo.rs",
           "stats": {
-            "blanks": 26,
+            "blanks": 58,
             "blobs": {
               "Markdown": {
                 "blanks": 7,
                 "blobs": {},
                 "code": 0,
-                "comments": 52
+                "comments": 55
               }
             },
-            "code": 235,
+            "code": 489,
             "comments": 27
           }
         },
         {
           "name": "./src/internal/build/json.rs",
           "stats": {
-            "blanks": 16,
+            "blanks": 29,
             "blobs": {
               "Markdown": {
                 "blanks": 1,
@@ -2564,14 +2585,14 @@
                 "comments": 38
               }
             },
-            "code": 157,
+            "code": 307,
             "comments": 4
           }
         },
         {
           "name": "./src/internal/cases.rs",
           "stats": {
-            "blanks": 11,
+            "blanks": 18,
             "blobs": {
               "Markdown": {
                 "blanks": 8,
@@ -2580,7 +2601,7 @@
                 "comments": 26
               }
             },
-            "code": 55,
+            "code": 95,
             "comments": 0
           }
         },
@@ -2596,7 +2617,7 @@
                 "comments": 17
               }
             },
-            "code": 31,
+            "code": 33,
             "comments": 5
           }
         },
@@ -2614,6 +2635,15 @@
             },
             "code": 739,
             "comments": 23
+          }
+        },
+        {
+          "name": "./src/internal/diagnostics/normalize_coverage.rs",
+          "stats": {
+            "blanks": 19,
+            "blobs": {},
+            "code": 208,
+            "comments": 0
           }
         },
         {
@@ -2667,7 +2697,7 @@
         {
           "name": "./src/internal/path.rs",
           "stats": {
-            "blanks": 13,
+            "blanks": 17,
             "blobs": {
               "Markdown": {
                 "blanks": 2,
@@ -2676,14 +2706,14 @@
                 "comments": 19
               }
             },
-            "code": 54,
+            "code": 73,
             "comments": 0
           }
         },
         {
           "name": "./src/internal/project.rs",
           "stats": {
-            "blanks": 12,
+            "blanks": 17,
             "blobs": {
               "Markdown": {
                 "blanks": 0,
@@ -2692,14 +2722,14 @@
                 "comments": 37
               }
             },
-            "code": 72,
+            "code": 96,
             "comments": 0
           }
         },
         {
           "name": "./src/internal/project/dependencies.rs",
           "stats": {
-            "blanks": 38,
+            "blanks": 66,
             "blobs": {
               "Markdown": {
                 "blanks": 0,
@@ -2708,14 +2738,14 @@
                 "comments": 65
               }
             },
-            "code": 289,
+            "code": 570,
             "comments": 2
           }
         },
         {
           "name": "./src/internal/project/features.rs",
           "stats": {
-            "blanks": 17,
+            "blanks": 34,
             "blobs": {
               "Markdown": {
                 "blanks": 3,
@@ -2724,7 +2754,7 @@
                 "comments": 19
               }
             },
-            "code": 97,
+            "code": 203,
             "comments": 7
           }
         },
@@ -2740,14 +2770,14 @@
                 "comments": 5
               }
             },
-            "code": 42,
+            "code": 40,
             "comments": 0
           }
         },
         {
           "name": "./src/internal/project/manifest.rs",
           "stats": {
-            "blanks": 10,
+            "blanks": 16,
             "blobs": {
               "Markdown": {
                 "blanks": 0,
@@ -2756,23 +2786,23 @@
                 "comments": 33
               }
             },
-            "code": 80,
+            "code": 148,
             "comments": 0
           }
         },
         {
           "name": "./src/internal/project/rustflags.rs",
           "stats": {
-            "blanks": 6,
+            "blanks": 15,
             "blobs": {
               "Markdown": {
                 "blanks": 1,
                 "blobs": {},
                 "code": 0,
-                "comments": 7
+                "comments": 8
               }
             },
-            "code": 20,
+            "code": 69,
             "comments": 2
           }
         },
@@ -2795,7 +2825,7 @@
         {
           "name": "./src/internal/report/diff.rs",
           "stats": {
-            "blanks": 15,
+            "blanks": 23,
             "blobs": {
               "Markdown": {
                 "blanks": 0,
@@ -2804,62 +2834,30 @@
                 "comments": 23
               }
             },
-            "code": 75,
+            "code": 140,
             "comments": 3
           }
         },
         {
           "name": "./src/internal/report/message.rs",
           "stats": {
-            "blanks": 36,
+            "blanks": 63,
             "blobs": {
               "Markdown": {
                 "blanks": 1,
                 "blobs": {},
                 "code": 0,
-                "comments": 24
+                "comments": 27
               }
             },
-            "code": 278,
+            "code": 510,
             "comments": 1
           }
         },
         {
           "name": "./src/internal/report/reporter.rs",
           "stats": {
-            "blanks": 14,
-            "blobs": {
-              "Markdown": {
-                "blanks": 0,
-                "blobs": {},
-                "code": 0,
-                "comments": 15
-              }
-            },
-            "code": 81,
-            "comments": 2
-          }
-        },
-        {
-          "name": "./src/internal/runner.rs",
-          "stats": {
-            "blanks": 70,
-            "blobs": {
-              "Markdown": {
-                "blanks": 8,
-                "blobs": {},
-                "code": 0,
-                "comments": 82
-              }
-            },
-            "code": 667,
-            "comments": 7
-          }
-        },
-        {
-          "name": "./src/internal/runner/expand.rs",
-          "stats": {
-            "blanks": 11,
+            "blanks": 21,
             "blobs": {
               "Markdown": {
                 "blanks": 0,
@@ -2868,7 +2866,39 @@
                 "comments": 17
               }
             },
-            "code": 88,
+            "code": 119,
+            "comments": 2
+          }
+        },
+        {
+          "name": "./src/internal/runner.rs",
+          "stats": {
+            "blanks": 112,
+            "blobs": {
+              "Markdown": {
+                "blanks": 8,
+                "blobs": {},
+                "code": 0,
+                "comments": 89
+              }
+            },
+            "code": 1021,
+            "comments": 7
+          }
+        },
+        {
+          "name": "./src/internal/runner/expand.rs",
+          "stats": {
+            "blanks": 25,
+            "blobs": {
+              "Markdown": {
+                "blanks": 0,
+                "blobs": {},
+                "code": 0,
+                "comments": 17
+              }
+            },
+            "code": 180,
             "comments": 0
           }
         },
@@ -2891,7 +2921,7 @@
         {
           "name": "./src/internal/sys/directory.rs",
           "stats": {
-            "blanks": 12,
+            "blanks": 22,
             "blobs": {
               "Markdown": {
                 "blanks": 1,
@@ -2900,30 +2930,30 @@
                 "comments": 12
               }
             },
-            "code": 61,
+            "code": 124,
             "comments": 0
           }
         },
         {
           "name": "./src/internal/sys/env.rs",
           "stats": {
-            "blanks": 5,
+            "blanks": 12,
             "blobs": {
               "Markdown": {
                 "blanks": 3,
                 "blobs": {},
                 "code": 0,
-                "comments": 15
+                "comments": 16
               }
             },
-            "code": 28,
+            "code": 72,
             "comments": 0
           }
         },
         {
           "name": "./src/internal/sys/flock.rs",
           "stats": {
-            "blanks": 18,
+            "blanks": 38,
             "blobs": {
               "Markdown": {
                 "blanks": 2,
@@ -2932,7 +2962,7 @@
                 "comments": 28
               }
             },
-            "code": 157,
+            "code": 274,
             "comments": 11
           }
         },
@@ -2964,7 +2994,7 @@
           "stats": {
             "blanks": 1,
             "blobs": {},
-            "code": 44,
+            "code": 41,
             "comments": 3
           }
         },
@@ -2973,7 +3003,7 @@
           "stats": {
             "blanks": 0,
             "blobs": {},
-            "code": 37,
+            "code": 1,
             "comments": 0
           }
         },
@@ -2982,7 +3012,7 @@
           "stats": {
             "blanks": 0,
             "blobs": {},
-            "code": 150,
+            "code": 1,
             "comments": 0
           }
         },
@@ -2991,7 +3021,7 @@
           "stats": {
             "blanks": 0,
             "blobs": {},
-            "code": 20,
+            "code": 1,
             "comments": 0
           }
         },
@@ -3000,7 +3030,7 @@
           "stats": {
             "blanks": 0,
             "blobs": {},
-            "code": 35,
+            "code": 1,
             "comments": 0
           }
         },
@@ -3009,7 +3039,7 @@
           "stats": {
             "blanks": 0,
             "blobs": {},
-            "code": 26,
+            "code": 1,
             "comments": 0
           }
         },
@@ -3018,7 +3048,7 @@
           "stats": {
             "blanks": 0,
             "blobs": {},
-            "code": 55,
+            "code": 4,
             "comments": 0
           }
         },
@@ -3027,7 +3057,7 @@
           "stats": {
             "blanks": 0,
             "blobs": {},
-            "code": 7,
+            "code": 1,
             "comments": 0
           }
         },
@@ -3036,7 +3066,7 @@
           "stats": {
             "blanks": 0,
             "blobs": {},
-            "code": 29,
+            "code": 6,
             "comments": 0
           }
         },
@@ -3045,7 +3075,7 @@
           "stats": {
             "blanks": 0,
             "blobs": {},
-            "code": 43,
+            "code": 1,
             "comments": 0
           }
         },
@@ -3054,7 +3084,7 @@
           "stats": {
             "blanks": 0,
             "blobs": {},
-            "code": 20,
+            "code": 1,
             "comments": 0
           }
         },
@@ -3063,7 +3093,7 @@
           "stats": {
             "blanks": 0,
             "blobs": {},
-            "code": 41,
+            "code": 1,
             "comments": 0
           }
         },
@@ -3072,7 +3102,7 @@
           "stats": {
             "blanks": 0,
             "blobs": {},
-            "code": 27,
+            "code": 1,
             "comments": 0
           }
         },
@@ -3081,7 +3111,7 @@
           "stats": {
             "blanks": 0,
             "blobs": {},
-            "code": 42,
+            "code": 1,
             "comments": 0
           }
         },
@@ -3090,7 +3120,7 @@
           "stats": {
             "blanks": 0,
             "blobs": {},
-            "code": 16,
+            "code": 5,
             "comments": 0
           }
         },
@@ -3099,7 +3129,7 @@
           "stats": {
             "blanks": 0,
             "blobs": {},
-            "code": 20,
+            "code": 5,
             "comments": 0
           }
         },
@@ -3108,7 +3138,7 @@
           "stats": {
             "blanks": 0,
             "blobs": {},
-            "code": 21,
+            "code": 4,
             "comments": 0
           }
         },
@@ -3117,7 +3147,7 @@
           "stats": {
             "blanks": 0,
             "blobs": {},
-            "code": 39,
+            "code": 1,
             "comments": 0
           }
         },
@@ -3126,7 +3156,7 @@
           "stats": {
             "blanks": 0,
             "blobs": {},
-            "code": 31,
+            "code": 4,
             "comments": 0
           }
         },
@@ -3135,7 +3165,7 @@
           "stats": {
             "blanks": 0,
             "blobs": {},
-            "code": 29,
+            "code": 1,
             "comments": 0
           }
         },
@@ -3144,7 +3174,7 @@
           "stats": {
             "blanks": 0,
             "blobs": {},
-            "code": 85,
+            "code": 1,
             "comments": 0
           }
         },
@@ -3153,7 +3183,7 @@
           "stats": {
             "blanks": 0,
             "blobs": {},
-            "code": 23,
+            "code": 4,
             "comments": 0
           }
         },
@@ -3162,7 +3192,55 @@
           "stats": {
             "blanks": 0,
             "blobs": {},
-            "code": 25,
+            "code": 6,
+            "comments": 0
+          }
+        },
+        {
+          "name": "./tests/foreign_project.rs",
+          "stats": {
+            "blanks": 11,
+            "blobs": {
+              "Markdown": {
+                "blanks": 1,
+                "blobs": {},
+                "code": 0,
+                "comments": 4
+              }
+            },
+            "code": 113,
+            "comments": 0
+          }
+        },
+        {
+          "name": "./tests/overwrite.rs",
+          "stats": {
+            "blanks": 9,
+            "blobs": {
+              "Markdown": {
+                "blanks": 0,
+                "blobs": {},
+                "code": 0,
+                "comments": 2
+              }
+            },
+            "code": 72,
+            "comments": 0
+          }
+        },
+        {
+          "name": "./tests/run_report.rs",
+          "stats": {
+            "blanks": 7,
+            "blobs": {
+              "Markdown": {
+                "blanks": 1,
+                "blobs": {},
+                "code": 0,
+                "comments": 3
+              }
+            },
+            "code": 69,
             "comments": 0
           }
         },
@@ -3602,10 +3680,10 @@
         {
           "name": "./fuzz/Cargo.toml",
           "stats": {
-            "blanks": 37,
+            "blanks": 38,
             "blobs": {},
             "code": 275,
-            "comments": 98
+            "comments": 102
           }
         },
         {
@@ -3636,51 +3714,6 @@
           }
         },
         {
-          "name": "./template-baselines/clippy.toml",
-          "stats": {
-            "blanks": 9,
-            "blobs": {},
-            "code": 126,
-            "comments": 42
-          }
-        },
-        {
-          "name": "./template-baselines/deny.toml",
-          "stats": {
-            "blanks": 4,
-            "blobs": {},
-            "code": 38,
-            "comments": 9
-          }
-        },
-        {
-          "name": "./template-baselines/dupes.toml",
-          "stats": {
-            "blanks": 3,
-            "blobs": {},
-            "code": 10,
-            "comments": 16
-          }
-        },
-        {
-          "name": "./template-baselines/rust-toolchain.toml",
-          "stats": {
-            "blanks": 0,
-            "blobs": {},
-            "code": 4,
-            "comments": 4
-          }
-        },
-        {
-          "name": "./template-baselines/rustfmt.toml",
-          "stats": {
-            "blanks": 4,
-            "blobs": {},
-            "code": 53,
-            "comments": 11
-          }
-        },
-        {
           "name": "./xtask/Cargo.toml",
           "stats": {
             "blanks": 6,
@@ -3691,8 +3724,8 @@
         }
       ]
     },
-    "code": 6642,
-    "comments": 3456,
+    "code": 8016,
+    "comments": 3312,
     "inaccurate": false,
     "reports": []
   }

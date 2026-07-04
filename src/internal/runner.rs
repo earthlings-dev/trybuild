@@ -12,10 +12,8 @@ use std::collections::BTreeMap as Map;
 use std::env;
 use std::ffi::OsStr;
 use std::ffi::OsString;
+use std::fs;
 use std::fs::File;
-use std::fs::{
-  self,
-};
 use std::iter;
 use std::mem;
 use std::path::Path;
@@ -26,20 +24,16 @@ use self::expand::ExpandedTest;
 use self::expand::expand_globs;
 use crate::internal::build::BuildError;
 use crate::internal::build::CompileFailure;
+use crate::internal::build::cargo;
 use crate::internal::build::cargo::Metadata;
 use crate::internal::build::cargo::PackageMetadata;
-use crate::internal::build::cargo::{
-  self,
-};
 use crate::internal::build::json::Stderr;
 use crate::internal::build::json::parse_cargo_json;
 use crate::internal::diagnostics::DiagnosticsError;
 use crate::internal::diagnostics::MismatchDetail;
 use crate::internal::diagnostics::UnexpectedSuccess;
+use crate::internal::diagnostics::normalize;
 use crate::internal::diagnostics::normalize::Variations;
-use crate::internal::diagnostics::normalize::{
-  self,
-};
 use crate::internal::error;
 use crate::internal::model::Expected;
 use crate::internal::model::Name;
@@ -56,12 +50,11 @@ use crate::internal::project::KeepGoing;
 use crate::internal::project::Project;
 use crate::internal::project::ProjectError;
 use crate::internal::project::Selected;
+use crate::internal::project::dependencies;
 use crate::internal::project::dependencies::Dependency;
 use crate::internal::project::dependencies::EditionOrInherit;
+use crate::internal::project::dependencies::GitSource;
 use crate::internal::project::dependencies::TargetDependencies;
-use crate::internal::project::dependencies::{
-  self,
-};
 use crate::internal::project::features;
 use crate::internal::project::manifest::Bin;
 use crate::internal::project::manifest::Edition;
@@ -129,18 +122,18 @@ fn compute(registered: &[Test], update: Update, view: &mut dyn FnMut(&CaseReport
   let mut tests = expand_globs(registered);
   filter(&mut tests);
 
-  let mut project = prepare(&tests, update)?;
-  let _lock = Lock::acquire(path!(project.dir / ".lock"))?;
-  write(&mut project)?;
-
-  let show_expected = project.selected.both();
   let mut cases = Vec::new();
-
   if tests.is_empty() {
     return Ok(Report {
       cases,
     });
   }
+
+  let mut project = prepare(&tests, update)?;
+  let _lock = Lock::acquire(path!(project.dir / ".lock"))?;
+  write(&mut project)?;
+
+  let show_expected = project.selected.both();
 
   if project.keep_going == KeepGoing::Yes && !project.selected.has_pass() {
     run_all(&project, tests, view, show_expected, &mut cases)?;
@@ -153,19 +146,31 @@ fn compute(registered: &[Test], update: Update, view: &mut dyn FnMut(&CaseReport
         is_from_glob: _,
       } = expanded;
       let outcome = maybe_error.map_or_else(|| case.evaluate(&project, &name), Err);
-      let report = CaseReport {
-        path: case.path,
-        expected: case.expected,
-        outcome,
-      };
-      view(&report, show_expected);
-      cases.push(report);
+      record_case(case, outcome, view, show_expected, &mut cases);
     }
   }
 
   Ok(Report {
     cases,
   })
+}
+
+/// Wraps one resolved case in a [`CaseReport`], streams it through the run's
+/// `view` callback, and collects it for the aggregate [`Report`].
+fn record_case(
+  case: Test,
+  outcome: error::Result<Outcome>,
+  view: &mut dyn FnMut(&CaseReport, bool),
+  show_expected: bool,
+  cases: &mut Vec<CaseReport>,
+) {
+  let report = CaseReport {
+    path: case.path,
+    expected: case.expected,
+    outcome,
+  };
+  view(&report, show_expected);
+  cases.push(report);
 }
 
 /// Programmatic entry: runs every registered case under the given `update` mode
@@ -292,22 +297,7 @@ fn prepare(tests: &[ExpandedTest], update: Update) -> error::Result<Project> {
 
   let mut features = features::find();
 
-  let path_dependencies = source_manifest
-    .dependencies
-    .iter()
-    .filter_map(|(name, dep)| {
-      let path = dep.path.as_ref()?;
-      if packages.iter().any(|pkg| &pkg.name == name) {
-        // Skip path dependencies coming from the workspace itself
-        None
-      } else {
-        Some(PathDependency {
-          name:            name.clone(),
-          normalized_path: path.canonicalize().ok()?,
-        })
-      }
-    })
-    .collect();
+  let path_dependencies = path_dependencies_of(&source_manifest, &packages);
 
   let crate_name = &source_manifest.package.name;
   let project_dir = path!(target_dir / "tests" / "trybuild" / crate_name /);
@@ -316,9 +306,7 @@ fn prepare(tests: &[ExpandedTest], update: Update) -> error::Result<Project> {
   let project_name = format!("{crate_name}-tests");
   let manifest = make_manifest(&workspace, &project_name, &source_dir, &packages, tests, source_manifest)?;
 
-  if let Some(enabled_features) = features.as_mut() {
-    enabled_features.retain(|feature| manifest.features.contains_key(feature));
-  }
+  retain_known_features(&mut features, &manifest);
 
   Ok(Project {
     dir: project_dir,
@@ -333,6 +321,41 @@ fn prepare(tests: &[ExpandedTest], update: Update) -> error::Result<Project> {
     manifest,
     keep_going: KeepGoing::No,
   })
+}
+
+/// Discovers non-workspace path dependencies from the crate-under-test manifest.
+#[allow(
+  clippy::single_call_fn,
+  reason = "path dependency selection is pure project policy split from prepare's filesystem and cargo metadata shell"
+)]
+fn path_dependencies_of(source_manifest: &dependencies::Manifest, packages: &[PackageMetadata]) -> Vec<PathDependency> {
+  source_manifest
+    .dependencies
+    .iter()
+    .filter_map(|(name, dep)| {
+      let path = dep.path.as_ref()?;
+      if packages.iter().any(|pkg| &pkg.name == name) {
+        // Skip path dependencies coming from the workspace itself.
+        None
+      } else {
+        Some(PathDependency {
+          name:            name.clone(),
+          normalized_path: path.canonicalize().ok()?,
+        })
+      }
+    })
+    .collect()
+}
+
+/// Drops active feature names that the generated manifest does not define.
+#[allow(
+  clippy::single_call_fn,
+  reason = "feature retention is a pure generated-manifest policy seam tested separately from prepare orchestration"
+)]
+fn retain_known_features(features: &mut Option<Vec<String>>, manifest: &Manifest) {
+  if let Some(enabled_features) = features.as_mut() {
+    enabled_features.retain(|feature| manifest.features.contains_key(feature));
+  }
 }
 
 /// Writes the generated `Cargo.toml` and placeholder `main.rs` to disk and
@@ -476,10 +499,7 @@ fn merge_dependencies(
       optional:         false,
       default_features: Some(false),
       features:         Vec::new(),
-      git:              None,
-      branch:           None,
-      tag:              None,
-      rev:              None,
+      git:              GitSource::default(),
       workspace:        false,
       rest:             Map::new(),
     });
@@ -575,13 +595,7 @@ fn run_all(
       let this_test = parsed.stderrs.get(&src_path).unwrap_or(&fallback);
       case.check(project, &name, this_test, "", None)
     };
-    let report = CaseReport {
-      path: case.path,
-      expected: case.expected,
-      outcome,
-    };
-    view(&report, show_expected);
-    cases.push(report);
+    record_case(case, outcome, view, show_expected, cases);
   }
 
   Ok(())
@@ -736,13 +750,7 @@ impl Test {
         }))
         .into(),
       ),
-      Update::Overwrite => {
-        fs::write(&stderr_path, preferred).map_err(DiagnosticsError::WriteStderr)?;
-        Ok(Outcome::Overwrote(Box::new(OverwriteDetail {
-          stderr_path,
-          stderr: preferred.to_owned(),
-        })))
-      }
+      Update::Overwrite => overwrite_snapshot(stderr_path, preferred),
     }
   }
 }
@@ -777,14 +785,18 @@ fn missing_snapshot(update: Update, stderr_path: PathBuf, preferred: &str) -> er
         stderr: preferred.to_owned(),
       })))
     }
-    Update::Overwrite => {
-      fs::write(&stderr_path, preferred).map_err(DiagnosticsError::WriteStderr)?;
-      Ok(Outcome::Overwrote(Box::new(OverwriteDetail {
-        stderr_path,
-        stderr: preferred.to_owned(),
-      })))
-    }
+    Update::Overwrite => overwrite_snapshot(stderr_path, preferred),
   }
+}
+
+/// Writes the preferred rendering over the `.stderr` snapshot in place, per
+/// [`Overwrite`](Update::Overwrite), and reports the overwrite as its outcome.
+fn overwrite_snapshot(stderr_path: PathBuf, preferred: &str) -> error::Result<Outcome> {
+  fs::write(&stderr_path, preferred).map_err(DiagnosticsError::WriteStderr)?;
+  Ok(Outcome::Overwrote(Box::new(OverwriteDetail {
+    stderr_path,
+    stderr: preferred.to_owned(),
+  })))
 }
 
 /// Confirms the test source file exists, returning a descriptive error if not.
@@ -818,7 +830,16 @@ fn check_exists(path: &Path) -> error::Result<()> {
   reason = "the command-line filter phase, named distinctly from glob expansion in compute's pipeline"
 )]
 fn filter(tests: &mut Vec<ExpandedTest>) {
-  let filters = env::args_os()
+  filter_with(tests, env::args_os());
+}
+
+/// Restricts `tests` to those selected by `trybuild=<filter>` arguments.
+#[allow(
+  clippy::single_call_fn,
+  reason = "argument filtering is tested through an injected argv iterator while filter owns the real process argv shell"
+)]
+fn filter_with(tests: &mut Vec<ExpandedTest>, args: impl Iterator<Item = OsString>) {
+  let filters = args
     .flat_map(OsString::into_string)
     .filter_map(|arg| {
       const PREFIX: &str = "trybuild=";
@@ -831,4 +852,386 @@ fn filter(tests: &mut Vec<ExpandedTest>) {
   }
 
   tests.retain(|expanded| filters.iter().any(|f| expanded.test.path.to_string_lossy().contains(f)));
+}
+
+#[cfg(test)]
+mod tests {
+  use std::path::PathBuf;
+  use std::result::Result as StdResult;
+
+  use strict_test_support::TempDir;
+  use strict_test_support::TestFailure;
+  use strict_test_support::ensure_all;
+  use strict_test_support::ensure_ok_source;
+  use strict_test_support::ensure_some;
+
+  use super::*;
+  use crate::internal::build::cargo::BuildTarget;
+
+  fn expanded(path: impl Into<PathBuf>, expected: Expected) -> ExpandedTest {
+    ExpandedTest {
+      name:         Name("trybuild000".to_owned()),
+      test:         Test {
+        path: path.into(),
+        expected,
+      },
+      error:        None,
+      is_from_glob: false,
+    }
+  }
+
+  #[allow(
+    clippy::single_call_fn,
+    reason = "the helper centralizes generated-manifest defaults for the feature-retention polarity test"
+  )]
+  fn generated_manifest(features: &[&str]) -> Manifest {
+    let feature_map = features.iter().map(|feature| ((*feature).to_owned(), Vec::new())).collect();
+    Manifest {
+      cargo_features: Vec::new(),
+      package:        Package {
+        name:     "trybuild-tests".to_owned(),
+        version:  "0.0.0".to_owned(),
+        edition:  Edition::default(),
+        resolver: None,
+        publish:  false,
+      },
+      features:       feature_map,
+      dependencies:   Map::new(),
+      target:         Map::new(),
+      bins:           Vec::new(),
+      workspace:      None,
+      patch:          Map::new(),
+      replace:        Map::new(),
+    }
+  }
+
+  fn dependency_path(path: impl Into<PathBuf>) -> Dependency {
+    Dependency {
+      version:          None,
+      path:             Some(Directory::new(path.into())),
+      optional:         false,
+      default_features: None,
+      features:         Vec::new(),
+      git:              GitSource::default(),
+      workspace:        false,
+      rest:             Map::new(),
+    }
+  }
+
+  fn dependency(optional: bool) -> Dependency {
+    Dependency {
+      version: None,
+      path: None,
+      optional,
+      default_features: None,
+      features: Vec::new(),
+      git: GitSource::default(),
+      workspace: false,
+      rest: Map::new(),
+    }
+  }
+
+  fn case_report(path: &str, outcome: error::Result<Outcome>) -> CaseReport {
+    CaseReport {
+      path: PathBuf::from(path),
+      expected: Expected::CompileFail,
+      outcome,
+    }
+  }
+
+  #[test]
+  fn filter_with_keeps_only_matching_trybuild_arguments() -> StdResult<(), TestFailure> {
+    let mut tests = vec![
+      expanded("tests/ui/alpha.rs", Expected::Pass),
+      expanded("tests/ui/beta.rs", Expected::CompileFail),
+    ];
+
+    filter_with(&mut tests, [OsString::from("test"), OsString::from("trybuild=beta.rs")].into_iter());
+    let only = ensure_some(tests.first(), "one filtered test remains")?;
+
+    ensure_all(&[
+      (tests.len() == 1, "trybuild filters remove non-matching cases"),
+      (
+        only.test.path == Path::new("tests/ui/beta.rs"),
+        "trybuild filters keep the matching case",
+      ),
+    ])
+  }
+
+  #[test]
+  fn filter_with_leaves_tests_when_no_filter_is_present() -> StdResult<(), TestFailure> {
+    let mut tests = vec![
+      expanded("tests/ui/alpha.rs", Expected::Pass),
+      expanded("tests/ui/beta.rs", Expected::CompileFail),
+    ];
+
+    filter_with(&mut tests, [OsString::from("test")].into_iter());
+
+    ensure_all(&[
+      (tests.len() == 2, "no trybuild filter keeps all cases"),
+      (
+        tests.iter().any(|case| case.test.path.ends_with("alpha.rs")),
+        "the first case remains without a filter",
+      ),
+      (
+        tests.iter().any(|case| case.test.path.ends_with("beta.rs")),
+        "the second case remains without a filter",
+      ),
+    ])
+  }
+
+  #[test]
+  fn retain_known_features_drops_unknown_active_features() -> StdResult<(), TestFailure> {
+    let manifest = generated_manifest(&["diff", "serde"]);
+    let mut features = Some(vec!["diff".to_owned(), "unknown".to_owned(), "serde".to_owned()]);
+
+    retain_known_features(&mut features, &manifest);
+    let retained = ensure_some(features.as_ref(), "features remain present after retention")?;
+    let expected = vec!["diff".to_owned(), "serde".to_owned()];
+    let mut no_features = None;
+    retain_known_features(&mut no_features, &manifest);
+
+    ensure_all(&[
+      (retained == &expected, "only manifest-defined features remain"),
+      (no_features.is_none(), "missing active feature detection remains missing"),
+    ])
+  }
+
+  #[test]
+  fn path_dependencies_of_keeps_external_canonical_paths() -> StdResult<(), TestFailure> {
+    let fixture = TempDir::new("path-deps")?;
+    let external = fixture.child("external");
+    let workspace = fixture.child("workspace");
+    fs::create_dir_all(&external).map_err(|error| TestFailure::Caused {
+      context: "create external dependency directory",
+      source:  Box::new(error),
+    })?;
+    fs::create_dir_all(&workspace).map_err(|error| TestFailure::Caused {
+      context: "create workspace dependency directory",
+      source:  Box::new(error),
+    })?;
+
+    let mut manifest = dependencies::Manifest::default();
+    let _external = manifest.dependencies.insert("external".to_owned(), dependency_path(&external));
+    let _workspace = manifest
+      .dependencies
+      .insert("workspace".to_owned(), dependency_path(&workspace));
+    let _missing = manifest
+      .dependencies
+      .insert("missing".to_owned(), dependency_path(fixture.child("missing")));
+    let packages = [PackageMetadata {
+      name:          "workspace".to_owned(),
+      targets:       Vec::<BuildTarget>::new(),
+      manifest_path: PathBuf::new(),
+    }];
+
+    let paths = path_dependencies_of(&manifest, &packages);
+    let only = ensure_some(paths.first(), "one external path dependency remains")?;
+
+    ensure_all(&[
+      (paths.len() == 1, "workspace and non-canonicalizable path dependencies are skipped"),
+      (only.name == "external", "external path dependencies are retained by name"),
+      (
+        only.normalized_path.as_ref()
+          == Directory::new(external.canonicalize().map_err(|error| TestFailure::Caused {
+            context: "canonicalize external dependency",
+            source:  Box::new(error),
+          })?)
+          .as_ref(),
+        "external path dependencies are canonicalized",
+      ),
+    ])
+  }
+
+  #[test]
+  fn aggregate_reports_failures_wip_and_clean_suites() -> StdResult<(), TestFailure> {
+    let clean = Report {
+      cases: vec![case_report(
+        "tests/ui/pass.rs",
+        Ok(Outcome::Passed(Box::new(PassDetail {
+          stdout:   String::new(),
+          stderr:   String::new(),
+          warnings: String::new(),
+        }))),
+      )],
+    };
+    let failed = Report {
+      cases: vec![case_report(
+        "tests/ui/fail.rs",
+        Err(
+          RunnerError::Failed {
+            failures: 1, total: 1
+          }
+          .into(),
+        ),
+      )],
+    };
+    let wip = Report {
+      cases: vec![case_report(
+        "tests/ui/wip.rs",
+        Ok(Outcome::CreatedWip(Box::new(WipDetail {
+          wip_path:    PathBuf::from("wip/wip.stderr"),
+          stderr_path: PathBuf::from("tests/ui/wip.stderr"),
+          stderr:      "error: new\n".to_owned(),
+        }))),
+      )],
+    };
+
+    ensure_all(&[
+      (aggregate(&clean).is_ok(), "clean reports aggregate successfully"),
+      (aggregate(&failed).is_err(), "case failures make the aggregate fail"),
+      (aggregate(&wip).is_err(), "created wip snapshots make the aggregate fail"),
+    ])
+  }
+
+  #[test]
+  fn snapshot_helpers_verify_missing_and_overwrite_in_place() -> StdResult<(), TestFailure> {
+    let fixture = TempDir::new("snapshot-overwrite")?;
+    let missing = fixture.child("missing.stderr");
+    let overwrite = fixture.child("overwrite.stderr");
+
+    let missing_result = missing_snapshot(Update::Verify, missing, "error: missing\n");
+    let overwrite_result = missing_snapshot(Update::Overwrite, overwrite.clone(), "error: created\n");
+    let _replaced = overwrite_snapshot(overwrite.clone(), "error: replaced\n").map_err(|source| TestFailure::Caused {
+      context: "overwrite existing snapshot",
+      source:  Box::new(source),
+    })?;
+
+    ensure_all(&[
+      (missing_result.is_err(), "verify mode reports a missing snapshot"),
+      (overwrite_result.is_ok(), "overwrite mode creates a missing snapshot in place"),
+      (
+        ensure_ok_source(fs::read_to_string(&overwrite), "overwritten snapshot can be read")? == "error: replaced\n",
+        "overwrite_snapshot replaces the snapshot bytes",
+      ),
+    ])
+  }
+
+  #[test]
+  fn check_exists_accepts_files_and_reports_missing_paths() -> StdResult<(), TestFailure> {
+    let fixture = TempDir::new("check-exists")?;
+    let present = fixture.child("present.rs");
+    ensure_ok_source(fs::write(&present, "fn main() {}\n"), "present fixture can be written")?;
+    let missing = fixture.child("missing.rs");
+
+    ensure_all(&[
+      (check_exists(&present).is_ok(), "existing test sources pass the existence check"),
+      (check_exists(&missing).is_err(), "missing test sources report an open error"),
+    ])
+  }
+
+  #[test]
+  fn merge_dependencies_adds_self_only_for_library_targets() -> StdResult<(), TestFailure> {
+    let source_dir = Directory::new("/crate");
+    let mut source_dependencies = Map::new();
+    let _normal = source_dependencies.insert("normal".to_owned(), dependency(false));
+    let mut source_dev_dependencies = Map::new();
+    let _dev = source_dev_dependencies.insert("dev".to_owned(), dependency(false));
+
+    let with_lib = merge_dependencies(
+      "demo",
+      &source_dir,
+      source_dependencies.clone(),
+      source_dev_dependencies.clone(),
+      true,
+    );
+    let without_lib = merge_dependencies("demo", &source_dir, source_dependencies, source_dev_dependencies, false);
+    let self_dep = ensure_some(with_lib.get("demo"), "library targets add a self dependency")?;
+
+    ensure_all(&[
+      (with_lib.contains_key("normal"), "source dependencies are retained"),
+      (with_lib.contains_key("dev"), "dev dependencies are merged"),
+      (
+        self_dep.path.as_ref().map(Directory::as_ref) == Some(source_dir.as_ref()),
+        "self dependencies point at the source dir",
+      ),
+      (!without_lib.contains_key("demo"), "bin-only crates do not add a self dependency"),
+    ])
+  }
+
+  #[test]
+  fn prune_features_keeps_only_optional_dependency_enables() -> StdResult<(), TestFailure> {
+    let mut dependencies = Map::new();
+    let _top = dependencies.insert("top".to_owned(), dependency(true));
+    let _plain = dependencies.insert("plain".to_owned(), dependency(false));
+    let mut target_dependencies = Map::new();
+    let _target_dep = target_dependencies.insert("targeted".to_owned(), dependency(true));
+    let mut targets = Map::new();
+    let _target = targets.insert("cfg(unix)".to_owned(), TargetDependencies {
+      dependencies:     target_dependencies,
+      dev_dependencies: Map::new(),
+    });
+    let mut features = Map::new();
+    let _feature = features.insert("feat".to_owned(), vec![
+      "dep:top".to_owned(),
+      "dep:targeted".to_owned(),
+      "dep:plain".to_owned(),
+      "plain".to_owned(),
+    ]);
+
+    let with_lib = prune_features(features.clone(), &dependencies, &targets, true, "demo");
+    let without_lib = prune_features(features, &dependencies, &targets, false, "demo");
+    let with_lib_enables = ensure_some(with_lib.get("feat"), "feature remains with a library target")?;
+    let without_lib_enables = ensure_some(without_lib.get("feat"), "feature remains without a library target")?;
+
+    ensure_all(&[
+      (
+        with_lib_enables == &["demo/feat", "dep:top", "dep:targeted"],
+        "library targets prefix self feature enables and keep optional dependencies",
+      ),
+      (
+        without_lib_enables == &["dep:top", "dep:targeted"],
+        "bin-only crates keep optional dependency enables without a self prefix",
+      ),
+    ])
+  }
+
+  #[test]
+  fn make_manifest_skips_bins_for_expansion_errors() -> StdResult<(), TestFailure> {
+    let fixture = TempDir::new("make-manifest")?;
+    let workspace = Directory::new(fixture.child("workspace"));
+    let source_dir = Directory::new(fixture.child("source"));
+    ensure_ok_source(fs::create_dir_all(source_dir.as_ref()), "source dir can be created")?;
+    let mut source_manifest = dependencies::Manifest::default();
+    source_manifest.package.name = "demo".to_owned();
+    let tests = vec![expanded("tests/ui/ok.rs", Expected::CompileFail), ExpandedTest {
+      name:         Name("trybuild001".to_owned()),
+      test:         Test {
+        path:     PathBuf::from("tests/ui/bad.rs"),
+        expected: Expected::CompileFail,
+      },
+      error:        Some(
+        RunnerError::Failed {
+          failures: 1, total: 1
+        }
+        .into(),
+      ),
+      is_from_glob: false,
+    }];
+    let packages = [PackageMetadata {
+      name:          "demo".to_owned(),
+      targets:       vec![BuildTarget {
+        crate_types: vec!["lib".to_owned()],
+      }],
+      manifest_path: source_dir.join("Cargo.toml"),
+    }];
+
+    let manifest =
+      make_manifest(&workspace, "demo-tests", &source_dir, &packages, &tests, source_manifest).map_err(|source| TestFailure::Caused {
+        context: "generated manifest can be built",
+        source:  Box::new(source),
+      })?;
+
+    ensure_all(&[
+      (manifest.bins.len() == 2, "the placeholder and successful test bins are registered"),
+      (
+        manifest.bins.iter().any(|bin| bin.path.ends_with("tests/ui/ok.rs")),
+        "successful expansions become bins",
+      ),
+      (
+        !manifest.bins.iter().any(|bin| bin.path.ends_with("tests/ui/bad.rs")),
+        "expansion errors do not become bins",
+      ),
+    ])
+  }
 }

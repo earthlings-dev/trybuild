@@ -11,11 +11,16 @@ repository = "https://github.com/dtolnay/trybuild"
 cargo-fuzz = true
 
 [dependencies]
-automod = "1.0.17"
 serde = "1.0.228"
 serde_derive = "1.0.228"
 libfuzzer-sys = "0.4"
-strict-test-support = { git = "ssh://git@github.com/earthlings-dev/strict-test-support-rs.git" }
+
+# cargo-machete scans only this crate's own sources textually; serde/serde_derive
+# are used inside the library files white-box-included via #[path] in
+# fuzz_targets/normalize.rs (sys/directory.rs, model.rs), which machete cannot
+# attribute to this crate.
+[package.metadata.cargo-machete]
+ignored = ["serde", "serde_derive"]
 
 [[bin]]
 name = "normalize"

@@ -7,11 +7,9 @@ use std::path::PathBuf;
 
 use serde_derive::Deserialize;
 
+use crate::internal::diagnostics::normalize;
 use crate::internal::diagnostics::normalize::Context;
 use crate::internal::diagnostics::normalize::Variations;
-use crate::internal::diagnostics::normalize::{
-  self,
-};
 use crate::internal::model::Name;
 use crate::internal::model::Test;
 use crate::internal::path::CanonicalPath;
@@ -213,4 +211,169 @@ fn record_executable(
     return;
   }
   let _previous = executables.insert(src_path, executable);
+}
+
+#[cfg(test)]
+mod tests {
+  use std::collections::BTreeMap as Map;
+  use std::fs;
+  use std::path::Path;
+  use std::path::PathBuf;
+  use std::result::Result as StdResult;
+
+  use strict_test_support::TempDir;
+  use strict_test_support::TestFailure;
+  use strict_test_support::ensure_all;
+  use strict_test_support::ensure_ok_source;
+  use strict_test_support::ensure_some;
+
+  use super::*;
+  use crate::internal::model::Expected;
+  use crate::internal::project::KeepGoing;
+  use crate::internal::project::Selected;
+  use crate::internal::project::manifest::Edition;
+  use crate::internal::project::manifest::Manifest;
+  use crate::internal::project::manifest::Package;
+  use crate::internal::sys::directory::Directory;
+  use crate::internal::sys::env::Update;
+
+  fn project(fixture: &TempDir) -> Project {
+    Project {
+      dir:               Directory::new(fixture.child("generated")),
+      source_dir:        Directory::new(fixture.child("source")),
+      target_dir:        Directory::new(fixture.child("target")),
+      name:              "demo-tests".to_owned(),
+      update:            Update::Verify,
+      selected:          Selected::Both,
+      features:          None,
+      workspace:         Directory::new(fixture.path()),
+      path_dependencies: Vec::new(),
+      manifest:          Manifest {
+        cargo_features: Vec::new(),
+        package:        Package {
+          name:     "demo-tests".to_owned(),
+          version:  "0.0.0".to_owned(),
+          edition:  Edition::default(),
+          resolver: None,
+          publish:  false,
+        },
+        features:       Map::new(),
+        dependencies:   Map::new(),
+        target:         Map::new(),
+        bins:           Vec::new(),
+        workspace:      None,
+        patch:          Map::new(),
+        replace:        Map::new(),
+      },
+      keep_going:        KeepGoing::No,
+    }
+  }
+
+  fn path_map<'a>(name: &'a Name, case: &'a Test, source: &Path) -> Map<CanonicalPath, (&'a Name, &'a Test)> {
+    let mut map = Map::new();
+    let _previous = map.insert(CanonicalPath::new(source), (name, case));
+    map
+  }
+
+  fn compiler_message(target: &str, source: &Path, level: &str, rendered: &str) -> String {
+    let target_json = serde_json::Value::String(target.to_owned());
+    let source_json = serde_json::Value::String(source.to_string_lossy().into_owned());
+    let level_json = serde_json::Value::String(level.to_owned());
+    let rendered_json = serde_json::Value::String(rendered.to_owned());
+    format!(
+      r#"{{"reason":"compiler-message","target":{{"name":{target_json},"src_path":{source_json}}},"message":{{"rendered":{rendered_json},"level":{level_json}}}}}"#
+    )
+  }
+
+  fn compiler_artifact(target: &str, source: &Path, executable: Option<&Path>) -> String {
+    let target_json = serde_json::Value::String(target.to_owned());
+    let source_json = serde_json::Value::String(source.to_string_lossy().into_owned());
+    let executable_json = executable.map_or(serde_json::Value::Null, |path| {
+      serde_json::Value::String(path.to_string_lossy().into_owned())
+    });
+    format!(r#"{{"reason":"compiler-artifact","target":{{"name":{target_json},"src_path":{source_json}}},"executable":{executable_json}}}"#)
+  }
+
+  #[test]
+  fn parse_cargo_json_records_matching_diagnostics_and_executables() -> StdResult<(), TestFailure> {
+    let fixture = TempDir::new("cargo-json-records")?;
+    let project = project(&fixture);
+    let source = fixture.child("source/case.rs");
+    ensure_ok_source(
+      fs::create_dir_all(source.parent().unwrap_or_else(|| Path::new("."))),
+      "source dir can be created",
+    )?;
+    ensure_ok_source(fs::write(&source, "fn main() {}\n"), "source file can be written")?;
+    let executable = fixture.child("target/debug/trybuild000");
+    let name = Name("trybuild000".to_owned());
+    let case = Test {
+      path:     PathBuf::from("case.rs"),
+      expected: Expected::CompileFail,
+    };
+    let warning = compiler_message(&name.0, &source, "warning", "warning: caution\n");
+    let error = compiler_message(&name.0, &source, "error", "error: broken\n");
+    let artifact = compiler_artifact(&name.0, &source, Some(&executable));
+    let stdout = format!("prelude\n{warning}\n{warning}\n{error}\n{artifact}\ntrailer\n");
+
+    let parsed = parse_cargo_json(&project, stdout.as_bytes(), &path_map(&name, &case, &source));
+    let stderr = ensure_some(
+      parsed.stderrs.get(&CanonicalPath::new(&source)),
+      "matching diagnostics are recorded",
+    )?;
+    let executable_path = ensure_some(
+      parsed.executables.get(&CanonicalPath::new(&source)),
+      "matching compiler artifacts record their executable",
+    )?;
+
+    ensure_all(&[
+      (parsed.stdout == "prelude\ntrailer\n", "non-message cargo stdout is preserved"),
+      (!stderr.success, "an error-level diagnostic marks the test as failed"),
+      (
+        stderr.stderr.preferred().contains("warning: caution"),
+        "warning diagnostics are normalized into stderr",
+      ),
+      (
+        stderr.stderr.preferred().contains("error: broken"),
+        "error diagnostics are normalized into stderr",
+      ),
+      (executable_path == &executable, "matching artifact executable paths are retained"),
+    ])
+  }
+
+  #[test]
+  fn parse_cargo_json_discards_unrelated_messages_and_artifacts() -> StdResult<(), TestFailure> {
+    let fixture = TempDir::new("cargo-json-discards")?;
+    let project = project(&fixture);
+    let source = fixture.child("source/case.rs");
+    let other = fixture.child("source/other.rs");
+    ensure_ok_source(
+      fs::create_dir_all(source.parent().unwrap_or_else(|| Path::new("."))),
+      "source dir can be created",
+    )?;
+    ensure_ok_source(fs::write(&source, "fn main() {}\n"), "source file can be written")?;
+    ensure_ok_source(fs::write(&other, "fn main() {}\n"), "other source file can be written")?;
+    let name = Name("trybuild000".to_owned());
+    let case = Test {
+      path:     PathBuf::from("case.rs"),
+      expected: Expected::CompileFail,
+    };
+    let failure_note = compiler_message(&name.0, &source, "failure-note", "error: skipped\n");
+    let wrong_source = compiler_message(&name.0, &other, "error", "error: skipped\n");
+    let wrong_target = compiler_message("trybuild999", &source, "error", "error: skipped\n");
+    let missing_executable = compiler_artifact(&name.0, &source, None);
+    let wrong_artifact_source = compiler_artifact(&name.0, &other, Some(&fixture.child("other-bin")));
+    let wrong_artifact_target = compiler_artifact("trybuild999", &source, Some(&fixture.child("wrong-bin")));
+    let unknown = r#"{"reason":"build-finished","success":true}"#;
+    let stdout = format!(
+      "{failure_note}\n{wrong_source}\n{wrong_target}\n{missing_executable}\n{wrong_artifact_source}\n{wrong_artifact_target}\n{unknown}\n"
+    );
+
+    let parsed = parse_cargo_json(&project, stdout.as_bytes(), &path_map(&name, &case, &source));
+
+    ensure_all(&[
+      (parsed.stdout.is_empty(), "discarded JSON messages do not leak into cargo stdout"),
+      (parsed.stderrs.is_empty(), "unrelated diagnostics are discarded"),
+      (parsed.executables.is_empty(), "unrelated artifacts are discarded"),
+    ])
+  }
 }

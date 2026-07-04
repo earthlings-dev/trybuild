@@ -87,6 +87,8 @@ impl ExpandedTestSet {
       && prev.is_from_glob
     {
       prev.test.expected = case.expected;
+      prev.error = error;
+      prev.is_from_glob = is_from_glob;
       return;
     }
 
@@ -113,4 +115,108 @@ fn glob(pattern: &str) -> Result<Vec<PathBuf>> {
     .collect::<Result<Vec<PathBuf>>>()?;
   paths.sort();
   Ok(paths)
+}
+
+#[cfg(test)]
+mod tests {
+  use std::fs;
+  use std::path::Path;
+  use std::path::PathBuf;
+  use std::result::Result as StdResult;
+
+  use strict_test_support::TempDir;
+  use strict_test_support::TestFailure;
+  use strict_test_support::ensure_all;
+  use strict_test_support::ensure_ok_source;
+  use strict_test_support::ensure_some;
+
+  use super::*;
+  use crate::internal::model::Expected;
+
+  fn registered(path: impl Into<PathBuf>, expected: Expected) -> Test {
+    Test {
+      path: path.into(),
+      expected,
+    }
+  }
+
+  fn touch(path: &Path) -> StdResult<(), TestFailure> {
+    ensure_ok_source(fs::write(path, "fn main() {}\n"), "fixture source file can be written")
+  }
+
+  fn entry(entries: &[ExpandedTest], index: usize) -> StdResult<&ExpandedTest, TestFailure> {
+    ensure_some(entries.get(index), "expanded entry exists")
+  }
+
+  #[test]
+  fn expand_globs_sorts_matches_and_assigns_names() -> StdResult<(), TestFailure> {
+    let fixture = TempDir::new("expand-globs")?;
+    let alpha = fixture.child("a.rs");
+    let beta = fixture.child("b.rs");
+    touch(&beta)?;
+    touch(&alpha)?;
+
+    let pattern = fixture.child("*.rs").to_string_lossy().into_owned();
+    let expanded = expand_globs(&[registered(pattern, Expected::CompileFail)]);
+    let first = entry(&expanded, 0)?;
+    let second = entry(&expanded, 1)?;
+
+    ensure_all(&[
+      (expanded.len() == 2, "glob expansion produces one entry per match"),
+      (
+        first.name.0 == "trybuild000",
+        "first expanded entry receives the first generated name",
+      ),
+      (
+        second.name.0 == "trybuild001",
+        "second expanded entry receives the second generated name",
+      ),
+      (first.test.path == alpha, "glob expansion sorts paths before insertion"),
+      (second.test.path == beta, "glob expansion preserves the sorted second path"),
+      (first.is_from_glob, "glob matches are marked as glob-derived"),
+    ])
+  }
+
+  #[test]
+  fn invalid_glob_is_reported_on_the_registered_case() -> StdResult<(), TestFailure> {
+    let expanded = expand_globs(&[registered("[*.rs", Expected::CompileFail)]);
+    let first = entry(&expanded, 0)?;
+
+    ensure_all(&[
+      (expanded.len() == 1, "invalid globs still produce one reportable entry"),
+      (first.error.is_some(), "invalid glob errors are stored on the entry"),
+      (!first.is_from_glob, "invalid glob entries are not marked as matches"),
+    ])
+  }
+
+  #[test]
+  fn explicit_paths_override_globs_but_explicit_duplicates_remain() -> StdResult<(), TestFailure> {
+    let fixture = TempDir::new("expand-dedup")?;
+    let alpha = fixture.child("a.rs");
+    let beta = fixture.child("b.rs");
+    touch(&alpha)?;
+    touch(&beta)?;
+
+    let pattern = fixture.child("*.rs").to_string_lossy().into_owned();
+    let expanded = expand_globs(&[
+      registered(pattern, Expected::CompileFail),
+      registered(beta.clone(), Expected::Pass),
+      registered(beta.clone(), Expected::CompileFail),
+    ]);
+    let first = entry(&expanded, 0)?;
+    let second = entry(&expanded, 1)?;
+    let third = entry(&expanded, 2)?;
+
+    ensure_all(&[
+      (expanded.len() == 3, "an explicit duplicate remains after overriding a glob match"),
+      (first.test.path == alpha, "the non-overridden glob match remains first"),
+      (second.test.path == beta, "the explicit path replaces the glob-derived entry"),
+      (
+        matches!(second.test.expected, Expected::Pass),
+        "the explicit path overrides the glob expectation",
+      ),
+      (!second.is_from_glob, "the overridden entry is no longer considered glob-derived"),
+      (third.test.path == beta, "a later explicit duplicate is kept as its own entry"),
+    ])
+  }
 }

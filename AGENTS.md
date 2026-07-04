@@ -14,13 +14,14 @@ Build / check:
 Test:
 - `cargo test` — everything (normalizer unit tests + self-hosted integration tests).
 - `cargo test --lib` — just the normalizer unit tests (fast; avoids spawning cargo-inside-cargo).
-- `cargo test --lib internal::diagnostics::snapshots::tests::<name>` — one normalizer snapshot case, e.g. `internal::diagnostics::snapshots::tests::basic` or `…::consteval`. Cases live in `src/tests/<name>.rs`. (Declared from `src/internal/diagnostics.rs`, not `normalize.rs`, so the fuzz target's `#[path]` include of `normalize.rs` stays free of test wiring.)
+- `cargo test --lib internal::diagnostics::snapshots::tests::<name>` — one normalizer snapshot case, e.g. `internal::diagnostics::snapshots::tests::basic` or `…::consteval`. Cases live in `src/tests/<name>.rs`, raw inputs in `src/tests/inputs/<name>.stderr`, and committed expected output in `src/tests/snapshots/<name>.snap`. (Declared from `src/internal/diagnostics.rs`, not `normalize.rs`, so the fuzz target's `#[path]` include of `normalize.rs` stays free of test wiring.)
 - `cargo test --test test` — the self-hosted integration suite (`tests/test.rs` runs trybuild on `tests/ui/*.rs`).
 - `cargo test -- test trybuild=<file.rs>` — run a single ui case by filename substring. The bare `test` is cargo's filter selecting the integration `#[test] fn test`; trybuild itself reads the `trybuild=` argument (see `filter()` in `src/internal/runner.rs`). Both tokens are required — `trybuild=…` alone matches no test name and runs nothing.
 
-Update snapshots (do not hand-write `.stderr` files):
-- A default run writes any missing snapshot into a `wip/` directory and fails the run, telling you to move it into place.
-- `TRYBUILD=overwrite cargo test` — write/overwrite `.stderr` files in place; review with `git diff` afterward. (`TRYBUILD=wip` forces the default wip behavior, `TRYBUILD=verify` fails on a missing or mismatched snapshot without writing anything; parsing is in `src/internal/sys/env.rs`.)
+Update snapshots:
+- Normalizer unit cases: `SNAPSHOTS=overwrite cargo test --lib` refreshes `src/tests/snapshots/*.snap` from the preferred normalizer output. Review with `git diff`; do not hand-write these committed `.snap` files. `SNAPSHOTS=verify` or an unset variable verifies without writing; `SNAPSHOTS=skip`/`ignore` bypasses comparison.
+- Runner/ui cases: a default run writes any missing `tests/ui/*.stderr` snapshot into a `wip/` directory and fails the run, telling you to move it into place.
+- Runner/ui cases: `TRYBUILD=overwrite cargo test` writes/overwrites `tests/ui/*.stderr` files in place; review with `git diff` afterward. (`TRYBUILD=wip` forces the default wip behavior, `TRYBUILD=verify` fails on a missing or mismatched snapshot without writing anything; parsing is in `src/internal/sys/env.rs`.)
 
 Lint / format / docs (matching CI in `.github/workflows/ci.yml`):
 - `cargo clippy --tests -- -Dclippy::all -Dclippy::pedantic`
@@ -49,7 +50,7 @@ The runner (`src/internal/runner.rs`) is the core. Its reporter-free `compute` p
 
 `src/internal/diagnostics/normalize.rs` defines an ordered `Normalization` enum. `diagnostics()` returns a *set* of `Variations`: each variation is the output as the normalizer would have rendered it at a successive point in its history. A test passes if the saved `.stderr` matches **any** variation; the **last** ("preferred") variation is what gets written when creating or overwriting a snapshot.
 
-Consequence: when adding a normalization step, **append the new enum variant at the marked end of the list** — never insert or reorder. Reordering changes the historical variations and breaks already-saved snapshots across every downstream crate. There is an explicit comment in the enum marking the insertion point. Snapshot cases for each step live in `src/tests/*.rs`, wired up by the `test_normalize!` macro (`src/tests.rs`) and `automod` from `src/internal/diagnostics.rs`.
+Consequence: when adding a normalization step, **append the new enum variant at the marked end of the list** — never insert or reorder. Reordering changes the historical variations and breaks already-saved snapshots across every downstream crate. There is an explicit comment in the enum marking the insertion point. Snapshot cases for each step live as small `src/tests/*.rs` macro invocations, with raw compiler input in `src/tests/inputs/*.stderr` and expected preferred output in `src/tests/snapshots/*.snap`; they are wired up by the `test_normalize!` macro (`src/tests.rs`) and `automod` from `src/internal/diagnostics.rs`.
 
 ### Self-hosted integration tests
 

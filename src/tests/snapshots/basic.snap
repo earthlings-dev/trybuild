@@ -1,0 +1,6 @@
+
+error: `self` parameter is only allowed in associated functions
+  --> tests/ui/error.rs:11:23
+   |
+11 | async fn bad_endpoint(self) -> Result<HttpResponseOkObject<()>, HttpError> {
+   |                       ^^^^ not semantically valid as function parameter

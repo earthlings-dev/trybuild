@@ -13,8 +13,7 @@ macro_rules! test_normalize {
         $(WORKSPACE=$workspace:literal)?
         $(INPUT=$input:literal)?
         $(TARGET=$target:literal)?
-        $original:literal
-        $expected:literal
+        $name:literal
     ) => {
         #[test]
         fn test() -> Result<(), strict_test_support::TestFailure> {
@@ -29,16 +28,14 @@ macro_rules! test_normalize {
                     normalized_path: crate::internal::sys::directory::Directory::new("/home/user/documents/rust/diesel/diesel"),
                 }],
             };
-            let original = $original;
+            let original = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/tests/inputs/", $name, ".stderr"));
             let variations = crate::internal::diagnostics::normalize::diagnostics(original, &context);
             let preferred = variations.preferred();
-            let expected = $expected;
-            strict_test_support::ensure_eq(
-                &preferred,
-                &expected,
+            strict_test_support::ensure_snapshot(
+                preferred,
+                std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/src/tests/snapshots/", $name, ".snap")),
                 "normalized diagnostic matches the expected snapshot",
-            )?;
-            Ok(())
+            )
         }
     };
 }

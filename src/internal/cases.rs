@@ -1,10 +1,8 @@
 //! The public [`TestCases`] builder: the value users construct, register cases
 //! on, and finally [`run`](TestCases::run).
 
+use std::fmt;
 use std::fmt::Debug;
-use std::fmt::{
-  self,
-};
 use std::path::Path;
 use std::path::PathBuf;
 
@@ -96,5 +94,54 @@ impl Default for TestCases {
 impl Debug for TestCases {
   fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
     formatter.debug_struct("TestCases").finish_non_exhaustive()
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use std::path::Path;
+
+  use strict_test_support::TestFailure;
+  use strict_test_support::ensure_all;
+  use strict_test_support::ensure_some;
+
+  use super::*;
+
+  #[test]
+  fn default_matches_new_and_registrations_preserve_order() -> Result<(), TestFailure> {
+    let empty = TestCases::default();
+    let mut cases = TestCases::new();
+
+    cases.pass("tests/ui/pass.rs");
+    cases.compile_fail("tests/ui/fail.rs");
+    let pass = ensure_some(cases.tests.first(), "pass registration is present")?;
+    let compile_fail = ensure_some(cases.tests.get(1), "compile-fail registration is present")?;
+
+    ensure_all(&[
+      (empty.tests.is_empty(), "default creates an empty test collection"),
+      (cases.tests.len() == 2, "registrations append test cases"),
+      (pass.path == Path::new("tests/ui/pass.rs"), "pass registrations preserve their path"),
+      (
+        compile_fail.path == Path::new("tests/ui/fail.rs"),
+        "compile-fail registrations preserve their path",
+      ),
+      (
+        format!("{:?}", pass.expected) == "Pass",
+        "pass registrations preserve their expected outcome",
+      ),
+      (
+        format!("{:?}", compile_fail.expected) == "CompileFail",
+        "compile-fail registrations preserve their expected outcome",
+      ),
+    ])
+  }
+
+  #[test]
+  fn debug_output_stays_non_exhaustive() -> Result<(), TestFailure> {
+    let debug = format!("{:?}", TestCases::new());
+    strict_test_support::ensure(
+      debug == "TestCases { .. }",
+      "TestCases debug output hides private registration details",
+    )
   }
 }

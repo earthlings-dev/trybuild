@@ -9,6 +9,8 @@ pub(in crate::internal) mod normalize;
 // test, not the library's `#[cfg(test)]` scaffolding of it. The `../` reaches back out of
 // `src/internal/` to the crate-root `src/tests.rs`.
 #[cfg(test)]
+mod normalize_coverage;
+#[cfg(test)]
 #[path = "../tests.rs"]
 mod snapshots;
 

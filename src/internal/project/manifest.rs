@@ -121,3 +121,77 @@ where
 fn empty_patch(patch: &Map<String, RegistryPatch>) -> bool {
   patch.values().all(|registry_patch| registry_patch.crates.is_empty())
 }
+
+#[cfg(test)]
+mod tests {
+  use strict_test_support::TestFailure;
+  use strict_test_support::ensure_all;
+  use strict_test_support::ensure_ok_source;
+
+  use super::*;
+  use crate::internal::project::dependencies::GitSource;
+
+  #[test]
+  fn patch_serialization_skips_only_empty_registries() -> Result<(), TestFailure> {
+    let mut manifest = Manifest {
+      cargo_features: Vec::new(),
+      package:        Package {
+        name:     "demo-tests".to_owned(),
+        version:  "0.0.0".to_owned(),
+        edition:  Edition::E2024,
+        resolver: None,
+        publish:  false,
+      },
+      features:       Map::new(),
+      dependencies:   Map::new(),
+      target:         Map::new(),
+      bins:           vec![Bin {
+        name: Name("trybuild000".to_owned()),
+        path: PathBuf::from("tests/ui/case.rs"),
+      }],
+      workspace:      None,
+      patch:          Map::new(),
+      replace:        Map::new(),
+    };
+
+    let empty_rendered = ensure_ok_source(toml::to_string(&manifest), "manifest without patches serializes")?;
+    let mut crates = Map::new();
+    let replaced_crate = crates.insert("patched".to_owned(), Patch {
+      path: Some(PathBuf::from("../patched")),
+      git:  GitSource::default(),
+      rest: Map::new(),
+    });
+    let mut patch = Map::new();
+    let replaced_empty_registry = patch.insert("empty".to_owned(), RegistryPatch {
+      crates: Map::new()
+    });
+    let replaced_crates_io_registry = patch.insert("crates-io".to_owned(), RegistryPatch {
+      crates,
+    });
+    manifest.patch = patch;
+
+    let non_empty_patch = empty_patch(&manifest.patch);
+    let patched_rendered = ensure_ok_source(toml::to_string(&manifest), "manifest with patches serializes")?;
+
+    ensure_all(&[
+      (replaced_crate.is_none(), "the patched crate is inserted once"),
+      (replaced_empty_registry.is_none(), "the empty patch registry is inserted once"),
+      (
+        replaced_crates_io_registry.is_none(),
+        "the populated patch registry is inserted once",
+      ),
+      (empty_patch(&Map::new()), "an absent patch table is empty"),
+      (!non_empty_patch, "a registry with patched crates makes the patch table non-empty"),
+      (!empty_rendered.contains("[patch]"), "empty patch tables are omitted"),
+      (
+        patched_rendered.contains("[patch.crates-io.patched]"),
+        "non-empty patch registries are serialized",
+      ),
+      (patched_rendered.contains("path = \"../patched\""), "patch entries keep their paths"),
+      (
+        !patched_rendered.contains("[patch.empty]"),
+        "empty patch registries are skipped during serialization",
+      ),
+    ])
+  }
+}

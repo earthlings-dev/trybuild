@@ -2,28 +2,26 @@
 //! replacing the former process-global `Term` plus `print!`/`println!` macros.
 
 use std::fmt;
+use std::io;
 use std::io::Write;
-use std::io::{
-  self,
-};
 
 use termcolor::Color;
 use termcolor::ColorChoice;
 use termcolor::ColorSpec;
 use termcolor::StandardStream;
-use termcolor::WriteColor as _;
+use termcolor::WriteColor;
 
-/// Buffered, colorized writer to stderr; the single owner of terminal output.
-pub(in crate::internal) struct Reporter {
-  /// The underlying colorized stderr stream.
-  stream:        StandardStream,
+/// Buffered, colorized writer; the single owner of terminal output.
+pub(in crate::internal) struct Reporter<W> {
+  /// The underlying colorized stream.
+  stream:        W,
   /// The color spec to apply at the start of each line.
   spec:          ColorSpec,
   /// Whether the next byte written begins a fresh line.
   start_of_line: bool,
 }
 
-impl Reporter {
+impl Reporter<StandardStream> {
   /// Creates a reporter writing to stderr with automatic color detection.
   #[allow(
     clippy::single_call_fn,
@@ -36,6 +34,27 @@ impl Reporter {
       spec:          ColorSpec::new(),
       start_of_line: true,
     }
+  }
+}
+
+impl<W> Reporter<W>
+where
+  W: WriteColor,
+{
+  /// Creates a reporter over an injected color writer.
+  #[cfg(test)]
+  pub(in crate::internal) fn from_stream(stream: W) -> Self {
+    Self {
+      stream,
+      spec: ColorSpec::new(),
+      start_of_line: true,
+    }
+  }
+
+  /// Returns the underlying stream, for inspecting captured output in tests.
+  #[cfg(test)]
+  pub(in crate::internal) fn into_stream(self) -> W {
+    self.stream
   }
 
   /// Writes formatted output. Terminal-write failures are unrecoverable and
@@ -80,7 +99,10 @@ impl Reporter {
   }
 }
 
-impl Write for Reporter {
+impl<W> Write for Reporter<W>
+where
+  W: WriteColor,
+{
   // Color one line at a time because Travis does not preserve color setting
   // across output lines.
   fn write(&mut self, mut buf: &[u8]) -> io::Result<usize> {
@@ -108,5 +130,30 @@ impl Write for Reporter {
 
   fn flush(&mut self) -> io::Result<()> {
     self.stream.flush()
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use strict_test_support::TestFailure;
+  use strict_test_support::ensure_eq;
+  use strict_test_support::ensure_ok_source;
+  use termcolor::NoColor;
+
+  use super::*;
+
+  #[test]
+  fn injected_stream_captures_rendered_output() -> Result<(), TestFailure> {
+    let mut reporter = Reporter::from_stream(NoColor::new(Vec::new()));
+
+    reporter.bold_color(Color::Red);
+    reporter.emitln(format_args!("hello"));
+
+    let stream = reporter.into_stream();
+    let output = ensure_ok_source(
+      String::from_utf8(stream.into_inner()),
+      "captured reporter output remains valid UTF-8",
+    )?;
+    ensure_eq(&output.as_str(), &"hello\n", "reporter writes through the injected stream")
   }
 }
