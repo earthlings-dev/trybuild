@@ -368,10 +368,7 @@ fn write(project: &mut Project) -> error::Result<()> {
   let manifest_toml = toml::to_string(&project.manifest).map_err(ProjectError::TomlSer)?;
   fs::write(path!(project.dir / "Cargo.toml"), manifest_toml).map_err(SysError::Io)?;
 
-  let main_rs = b"\
-        #![allow(unused_crate_dependencies, missing_docs)]\n\
-        fn main() {}\n\
-    ";
+  let main_rs = b"fn main() {}\n";
   fs::write(path!(project.dir / "main.rs"), &main_rs[..]).map_err(SysError::Io)?;
 
   cargo::build_dependencies(project)?;
@@ -633,27 +630,19 @@ impl Test {
     build_stdout: &str,
     executable: Option<&Path>,
   ) -> error::Result<Outcome> {
-    let check = match self.expected {
-      Expected::Pass => Self::check_pass,
-      Expected::CompileFail => Self::check_compile_fail,
-    };
-
-    check(self, project, name, result.success, build_stdout, &result.stderr, executable)
+    match self.expected {
+      Expected::Pass => Self::check_pass(project, name, result.success, build_stdout, &result.stderr, executable),
+      Expected::CompileFail => self.check_compile_fail(project, name, result.success, build_stdout, &result.stderr, executable),
+    }
   }
 
   /// Checks a pass-test: it must compile, then its binary must run without
   /// failing — carrying the run output either way.
   #[allow(
     clippy::single_call_fn,
-    reason = "a check strategy selected by function pointer in `check`, paired with check_compile_fail behind the Expected dispatch"
-  )]
-  #[allow(
-    clippy::unused_self,
-    reason = "the `&self` receiver is unused here but structurally required: `check` dispatches check_pass and check_compile_fail through \
-              a single function pointer, so both must share one receiver signature, and check_compile_fail does read `self`"
+    reason = "the pass-test strategy paired with check_compile_fail behind the Expected dispatch"
   )]
   fn check_pass(
-    &self,
     project: &Project,
     name: &Name,
     success: bool,
@@ -822,10 +811,6 @@ fn check_exists(path: &Path) -> error::Result<()> {
 /// argument starting with `trybuild=` provides a filename filter: only cases
 /// whose filename contains the filter string are run.
 #[allow(
-  clippy::needless_collect,
-  reason = "false positive https://github.com/rust-lang/rust-clippy/issues/5991"
-)]
-#[allow(
   clippy::single_call_fn,
   reason = "the command-line filter phase, named distinctly from glob expansion in compute's pipeline"
 )]
@@ -839,19 +824,58 @@ fn filter(tests: &mut Vec<ExpandedTest>) {
   reason = "argument filtering is tested through an injected argv iterator while filter owns the real process argv shell"
 )]
 fn filter_with(tests: &mut Vec<ExpandedTest>, args: impl Iterator<Item = OsString>) {
-  let filters = args
-    .flat_map(OsString::into_string)
-    .filter_map(|arg| {
-      const PREFIX: &str = "trybuild=";
-      arg.strip_prefix(PREFIX).filter(|rest| !rest.is_empty()).map(ToOwned::to_owned)
-    })
-    .collect::<Vec<String>>();
+  let filters = TrybuildFilters::from_args(args);
 
   if filters.is_empty() {
     return;
   }
 
-  tests.retain(|expanded| filters.iter().any(|f| expanded.test.path.to_string_lossy().contains(f)));
+  tests.retain(|expanded| filters.matches_path(&expanded.test.path));
+}
+
+/// The `trybuild=<fragment>` command-line filters selected for this run.
+struct TrybuildFilters {
+  /// Non-empty path fragments matched against registered test paths.
+  fragments: Vec<String>,
+}
+
+impl TrybuildFilters {
+  /// Extracts non-empty `trybuild=<fragment>` filters from process arguments.
+  #[allow(
+    clippy::single_call_fn,
+    reason = "filter parsing is a named CLI policy step kept separate from applying the filters to expanded tests"
+  )]
+  fn from_args(args: impl Iterator<Item = OsString>) -> Self {
+    let fragments = args
+      .flat_map(OsString::into_string)
+      .filter_map(|arg| {
+        const PREFIX: &str = "trybuild=";
+        arg.strip_prefix(PREFIX).filter(|rest| !rest.is_empty()).map(ToOwned::to_owned)
+      })
+      .collect();
+    Self {
+      fragments,
+    }
+  }
+
+  /// Whether no case filter was provided.
+  #[allow(
+    clippy::single_call_fn,
+    reason = "the empty-filter predicate keeps filter_with's no-filter branch readable at the domain level"
+  )]
+  const fn is_empty(&self) -> bool {
+    self.fragments.is_empty()
+  }
+
+  /// Whether `path` matches at least one selected filter fragment.
+  #[allow(
+    clippy::single_call_fn,
+    reason = "path matching is the filter value object's core query and names the OR semantics across fragments"
+  )]
+  fn matches_path(&self, path: &Path) -> bool {
+    let rendered = path.to_string_lossy();
+    self.fragments.iter().any(|fragment| rendered.contains(fragment))
+  }
 }
 
 #[cfg(test)]
@@ -861,6 +885,7 @@ mod tests {
 
   use strict_test_support::TempDir;
   use strict_test_support::TestFailure;
+  use strict_test_support::ensure;
   use strict_test_support::ensure_all;
   use strict_test_support::ensure_ok_source;
   use strict_test_support::ensure_some;
@@ -939,6 +964,10 @@ mod tests {
     }
   }
 
+  fn has_case(tests: &[ExpandedTest], file: &str) -> bool {
+    tests.iter().any(|case| case.test.path.ends_with(Path::new(file)))
+  }
+
   #[test]
   fn filter_with_keeps_only_matching_trybuild_arguments() -> StdResult<(), TestFailure> {
     let mut tests = vec![
@@ -969,15 +998,48 @@ mod tests {
 
     ensure_all(&[
       (tests.len() == 2, "no trybuild filter keeps all cases"),
-      (
-        tests.iter().any(|case| case.test.path.ends_with("alpha.rs")),
-        "the first case remains without a filter",
-      ),
-      (
-        tests.iter().any(|case| case.test.path.ends_with("beta.rs")),
-        "the second case remains without a filter",
-      ),
+      (has_case(&tests, "alpha.rs"), "the first case remains without a filter"),
+      (has_case(&tests, "beta.rs"), "the second case remains without a filter"),
     ])
+  }
+
+  #[test]
+  fn filter_with_matches_any_non_empty_trybuild_argument() -> StdResult<(), TestFailure> {
+    let mut tests = vec![
+      expanded("tests/ui/alpha.rs", Expected::Pass),
+      expanded("tests/ui/beta.rs", Expected::CompileFail),
+      expanded("tests/ui/gamma.rs", Expected::CompileFail),
+    ];
+
+    filter_with(
+      &mut tests,
+      [
+        OsString::from("test"),
+        OsString::from("trybuild=alpha"),
+        OsString::from("trybuild="),
+        OsString::from("trybuild=gamma"),
+      ]
+      .into_iter(),
+    );
+
+    ensure_all(&[
+      (tests.len() == 2, "multiple trybuild filters keep every matching case"),
+      (has_case(&tests, "alpha.rs"), "the first non-empty filter is applied"),
+      (has_case(&tests, "gamma.rs"), "the second non-empty filter is applied"),
+      (!has_case(&tests, "beta.rs"), "non-matching cases are removed"),
+    ])
+  }
+
+  #[test]
+  fn filter_with_can_select_no_cases() -> StdResult<(), TestFailure> {
+    let mut tests = vec![
+      expanded("tests/ui/alpha.rs", Expected::Pass),
+      expanded("tests/ui/beta.rs", Expected::CompileFail),
+    ];
+
+    filter_with(&mut tests, [OsString::from("test"), OsString::from("trybuild=missing")].into_iter());
+
+    ensure(tests.is_empty(), "a filter with no matching path removes every case")
   }
 
   #[test]

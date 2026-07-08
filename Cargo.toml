@@ -80,7 +80,7 @@ strict-xtask-cargo = { version = "0.1.0", git = "ssh://git@github.com/earthlings
 strict-xtask-agents-md = { version = "0.1.0", git = "ssh://git@github.com/earthlings-dev/strict-xtask-agents-md-rs.git", branch = "main" }
 mutant_fleet = { version = "0.1.0", git = "ssh://git@github.com/earthlings-dev/rust-mutant-fleet.git", branch = "main" }
 strict-test-support = { version = "0.1.0", git = "ssh://git@github.com/earthlings-dev/strict-test-support-rs.git", branch = "main" }
-trybuild = { git = "ssh://git@github.com/strict-rs/strict-trybuild.git", branch = "strict", version = "1" }
+trybuild = { version = "1", path = "." }
 syn = { version = "2", features = ["full", "visit"] }
 proc-macro2 = { version = "1", features = ["span-locations"] }
 serde = { version = "1", features = ["derive"] }
@@ -92,8 +92,9 @@ globset = "0.4"
 toml = "1.1"
 toml_edit = "0.25"
 anstyle = "1"
-snapbox = { version = "1.2", default-features = false, features = ["diff"] }
+snapbox = { version = "1.2", features = ["diff"], default-features = false }
 parking_lot = "0.12"
+proptest = { git = "ssh://git@github.com/strict-rs/strict-proptest.git", branch = "strict", version = "1.11", features = ["std"], default-features = false }
 
 [patch.crates-io]
 
@@ -126,6 +127,10 @@ bpaf = { git = "ssh://git@github.com/strict-rs/strict-bpaf.git", branch = "sync"
 # tracing-subscriber = { git = "ssh://git@github.com/strict-rs/strict-tracing.git", branch = "strict", version = "0.3.23" }
 # tracing-test = { git = "ssh://git@github.com/strict-rs/strict-tracing.git", branch = "strict", version = "0.1.0" }
 # tracing-tower = { git = "ssh://git@github.com/strict-rs/strict-tracing.git", branch = "strict", version = "0.1.0" }
+
+[workspace.metadata.config.layout]
+schema-version = "0.1.0"
+kind = "flat"
 
 [lints]
 workspace = true
@@ -555,3 +560,11 @@ question_mark_used                       = "allow"   # `?` is idiomatic
 pub_use                                  = "allow"   # re-export idiom
 ref_binding_to_reference                 = "allow"   # contradicts pattern_type_mismatch
 blanket_clippy_restriction_lints         = "allow"   # we intentionally enable restriction individually
+
+[patch."https://github.com/strict-rs/strict-trybuild"]
+trybuild = { path = "." }
+xtask = { path = "xtask" }
+
+[patch."ssh://git@github.com/strict-rs/strict-trybuild.git"]
+trybuild = { path = "." }
+xtask = { path = "xtask" }

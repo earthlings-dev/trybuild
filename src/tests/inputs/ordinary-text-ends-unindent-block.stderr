@@ -1,0 +1,10 @@
+error: unexpected token
+  --> src/main.rs:12:5
+   |
+12 |     let value = ();
+   |     ^^^
+  ordinary parser context that is not part of the source block
+   |
+13 |     value
+   |     ^^^^^
+error: could not compile `testing` (bin "testing") due to 1 previous error

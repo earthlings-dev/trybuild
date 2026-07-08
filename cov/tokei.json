@@ -18,7 +18,7 @@
     ]
   },
   "Markdown": {
-    "blanks": 724,
+    "blanks": 739,
     "children": {
       "BASH": [
         {
@@ -180,16 +180,16 @@
       ]
     },
     "code": 0,
-    "comments": 1579,
+    "comments": 1607,
     "inaccurate": false,
     "reports": [
       {
         "name": "./AGENTS.md",
         "stats": {
-          "blanks": 25,
+          "blanks": 52,
           "blobs": {},
           "code": 0,
-          "comments": 47
+          "comments": 126
         }
       },
       {
@@ -463,10 +463,10 @@
       {
         "name": "./xtask/AGENTS.md",
         "stats": {
-          "blanks": 52,
+          "blanks": 40,
           "blobs": {},
           "code": 0,
-          "comments": 102
+          "comments": 51
         }
       },
       {
@@ -525,7 +525,7 @@
     ]
   },
   "Rust": {
-    "blanks": 824,
+    "blanks": 858,
     "children": {
       "Markdown": [
         {
@@ -543,7 +543,7 @@
             "blanks": 0,
             "blobs": {},
             "code": 0,
-            "comments": 13
+            "comments": 17
           }
         },
         {
@@ -606,7 +606,7 @@
             "blanks": 5,
             "blobs": {},
             "code": 0,
-            "comments": 120
+            "comments": 135
           }
         },
         {
@@ -660,7 +660,7 @@
             "blanks": 0,
             "blobs": {},
             "code": 0,
-            "comments": 65
+            "comments": 76
           }
         },
         {
@@ -741,7 +741,7 @@
             "blanks": 8,
             "blobs": {},
             "code": 0,
-            "comments": 89
+            "comments": 94
           }
         },
         {
@@ -786,7 +786,7 @@
             "blanks": 2,
             "blobs": {},
             "code": 0,
-            "comments": 28
+            "comments": 23
           }
         },
         {
@@ -888,8 +888,8 @@
         }
       ]
     },
-    "code": 6445,
-    "comments": 107,
+    "code": 6702,
+    "comments": 102,
     "inaccurate": false,
     "reports": [
       {
@@ -911,17 +911,17 @@
       {
         "name": "./fuzz/fuzz_targets/normalize.rs",
         "stats": {
-          "blanks": 5,
+          "blanks": 9,
           "blobs": {
             "Markdown": {
               "blanks": 0,
               "blobs": {},
               "code": 0,
-              "comments": 13
+              "comments": 17
             }
           },
-          "code": 54,
-          "comments": 5
+          "code": 65,
+          "comments": 0
         }
       },
       {
@@ -1023,16 +1023,16 @@
       {
         "name": "./src/internal/diagnostics/normalize.rs",
         "stats": {
-          "blanks": 91,
+          "blanks": 101,
           "blobs": {
             "Markdown": {
               "blanks": 5,
               "blobs": {},
               "code": 0,
-              "comments": 120
+              "comments": 135
             }
           },
-          "code": 739,
+          "code": 826,
           "comments": 23
         }
       },
@@ -1128,16 +1128,16 @@
       {
         "name": "./src/internal/project/dependencies.rs",
         "stats": {
-          "blanks": 66,
+          "blanks": 70,
           "blobs": {
             "Markdown": {
               "blanks": 0,
               "blobs": {},
               "code": 0,
-              "comments": 65
+              "comments": 76
             }
           },
-          "code": 570,
+          "code": 667,
           "comments": 2
         }
       },
@@ -1169,7 +1169,7 @@
               "comments": 5
             }
           },
-          "code": 40,
+          "code": 36,
           "comments": 0
         }
       },
@@ -1272,16 +1272,16 @@
       {
         "name": "./src/internal/runner.rs",
         "stats": {
-          "blanks": 112,
+          "blanks": 122,
           "blobs": {
             "Markdown": {
               "blanks": 8,
               "blobs": {},
               "code": 0,
-              "comments": 89
+              "comments": 94
             }
           },
-          "code": 1021,
+          "code": 1068,
           "comments": 7
         }
       },
@@ -1352,16 +1352,16 @@
       {
         "name": "./src/internal/sys/flock.rs",
         "stats": {
-          "blanks": 38,
+          "blanks": 44,
           "blobs": {
             "Markdown": {
               "blanks": 2,
               "blobs": {},
               "code": 0,
-              "comments": 28
+              "comments": 23
             }
           },
-          "code": 274,
+          "code": 294,
           "comments": 11
         }
       },
@@ -1384,7 +1384,7 @@
               "comments": 178
             }
           },
-          "code": 30,
+          "code": 23,
           "comments": 0
         }
       },
@@ -1515,6 +1515,15 @@
         }
       },
       {
+        "name": "./src/tests/ordinary-text-ends-unindent-block.rs",
+        "stats": {
+          "blanks": 0,
+          "blobs": {},
+          "code": 1,
+          "comments": 0
+        }
+      },
+      {
         "name": "./src/tests/proc-macro-panic.rs",
         "stats": {
           "blanks": 0,
@@ -1569,6 +1578,15 @@
         }
       },
       {
+        "name": "./src/tests/suggestion-unindent.rs",
+        "stats": {
+          "blanks": 0,
+          "blobs": {},
+          "code": 1,
+          "comments": 0
+        }
+      },
+      {
         "name": "./src/tests/traits-must-be-implemented.rs",
         "stats": {
           "blanks": 0,
@@ -1607,7 +1625,7 @@
               "comments": 4
             }
           },
-          "code": 113,
+          "code": 117,
           "comments": 0
         }
       },
@@ -2048,18 +2066,18 @@
     ]
   },
   "TOML": {
-    "blanks": 122,
+    "blanks": 125,
     "children": {},
-    "code": 953,
+    "code": 955,
     "comments": 333,
     "inaccurate": false,
     "reports": [
       {
         "name": "./Cargo.toml",
         "stats": {
-          "blanks": 54,
+          "blanks": 57,
           "blobs": {},
-          "code": 365,
+          "code": 375,
           "comments": 138
         }
       },
@@ -2077,7 +2095,7 @@
         "stats": {
           "blanks": 4,
           "blobs": {},
-          "code": 38,
+          "code": 30,
           "comments": 9
         }
       },
@@ -2138,7 +2156,7 @@
     ]
   },
   "Total": {
-    "blanks": 1884,
+    "blanks": 1936,
     "children": {
       "Just": [
         {
@@ -2155,10 +2173,10 @@
         {
           "name": "./AGENTS.md",
           "stats": {
-            "blanks": 25,
+            "blanks": 52,
             "blobs": {},
             "code": 0,
-            "comments": 47
+            "comments": 126
           }
         },
         {
@@ -2432,10 +2450,10 @@
         {
           "name": "./xtask/AGENTS.md",
           "stats": {
-            "blanks": 52,
+            "blanks": 40,
             "blobs": {},
             "code": 0,
-            "comments": 102
+            "comments": 51
           }
         },
         {
@@ -2512,17 +2530,17 @@
         {
           "name": "./fuzz/fuzz_targets/normalize.rs",
           "stats": {
-            "blanks": 5,
+            "blanks": 9,
             "blobs": {
               "Markdown": {
                 "blanks": 0,
                 "blobs": {},
                 "code": 0,
-                "comments": 13
+                "comments": 17
               }
             },
-            "code": 54,
-            "comments": 5
+            "code": 65,
+            "comments": 0
           }
         },
         {
@@ -2624,16 +2642,16 @@
         {
           "name": "./src/internal/diagnostics/normalize.rs",
           "stats": {
-            "blanks": 91,
+            "blanks": 101,
             "blobs": {
               "Markdown": {
                 "blanks": 5,
                 "blobs": {},
                 "code": 0,
-                "comments": 120
+                "comments": 135
               }
             },
-            "code": 739,
+            "code": 826,
             "comments": 23
           }
         },
@@ -2729,16 +2747,16 @@
         {
           "name": "./src/internal/project/dependencies.rs",
           "stats": {
-            "blanks": 66,
+            "blanks": 70,
             "blobs": {
               "Markdown": {
                 "blanks": 0,
                 "blobs": {},
                 "code": 0,
-                "comments": 65
+                "comments": 76
               }
             },
-            "code": 570,
+            "code": 667,
             "comments": 2
           }
         },
@@ -2770,7 +2788,7 @@
                 "comments": 5
               }
             },
-            "code": 40,
+            "code": 36,
             "comments": 0
           }
         },
@@ -2873,16 +2891,16 @@
         {
           "name": "./src/internal/runner.rs",
           "stats": {
-            "blanks": 112,
+            "blanks": 122,
             "blobs": {
               "Markdown": {
                 "blanks": 8,
                 "blobs": {},
                 "code": 0,
-                "comments": 89
+                "comments": 94
               }
             },
-            "code": 1021,
+            "code": 1068,
             "comments": 7
           }
         },
@@ -2953,16 +2971,16 @@
         {
           "name": "./src/internal/sys/flock.rs",
           "stats": {
-            "blanks": 38,
+            "blanks": 44,
             "blobs": {
               "Markdown": {
                 "blanks": 2,
                 "blobs": {},
                 "code": 0,
-                "comments": 28
+                "comments": 23
               }
             },
-            "code": 274,
+            "code": 294,
             "comments": 11
           }
         },
@@ -2985,7 +3003,7 @@
                 "comments": 178
               }
             },
-            "code": 30,
+            "code": 23,
             "comments": 0
           }
         },
@@ -3116,6 +3134,15 @@
           }
         },
         {
+          "name": "./src/tests/ordinary-text-ends-unindent-block.rs",
+          "stats": {
+            "blanks": 0,
+            "blobs": {},
+            "code": 1,
+            "comments": 0
+          }
+        },
+        {
           "name": "./src/tests/proc-macro-panic.rs",
           "stats": {
             "blanks": 0,
@@ -3170,6 +3197,15 @@
           }
         },
         {
+          "name": "./src/tests/suggestion-unindent.rs",
+          "stats": {
+            "blanks": 0,
+            "blobs": {},
+            "code": 1,
+            "comments": 0
+          }
+        },
+        {
           "name": "./src/tests/traits-must-be-implemented.rs",
           "stats": {
             "blanks": 0,
@@ -3208,7 +3244,7 @@
                 "comments": 4
               }
             },
-            "code": 113,
+            "code": 117,
             "comments": 0
           }
         },
@@ -3644,9 +3680,9 @@
         {
           "name": "./Cargo.toml",
           "stats": {
-            "blanks": 54,
+            "blanks": 57,
             "blobs": {},
-            "code": 365,
+            "code": 375,
             "comments": 138
           }
         },
@@ -3664,7 +3700,7 @@
           "stats": {
             "blanks": 4,
             "blobs": {},
-            "code": 38,
+            "code": 30,
             "comments": 9
           }
         },
@@ -3724,8 +3760,8 @@
         }
       ]
     },
-    "code": 8016,
-    "comments": 3312,
+    "code": 8275,
+    "comments": 3365,
     "inaccurate": false,
     "reports": []
   }

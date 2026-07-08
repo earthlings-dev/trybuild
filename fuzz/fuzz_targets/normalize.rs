@@ -1,53 +1,62 @@
 //! Fuzz target exercising `normalize::diagnostics`.
 #![no_main]
-#![allow(
-    unknown_lints,
-    mismatched_lifetime_syntaxes,
-    reason = "the white-box-included normalize.rs is shared with the library build"
-)]
 
 /// White-box reconstruction of the slice of the library's private
-/// `crate::internal` tree that the included engine files need. Placing each file
-/// at its real module path keeps the engine's `pub(in crate::internal)`
-/// visibilities and `crate::internal::…` use-paths resolving exactly as they do
-/// under `lib.rs`, so `src/` needs no fuzz-only edits. Declarations mirror
-/// `src/internal.rs`, `src/internal/sys.rs`, and `src/internal/diagnostics.rs`. The
-/// `fuzz_target!` entry lives inside this module so it can reach the engine's
-/// `pub(in crate::internal)` `Context`/`diagnostics` directly, with no crate-root
-/// wrapper whose visibility could satisfy neither `unreachable_pub` nor
-/// `redundant_pub_crate`.
+/// `crate::internal` tree that `normalize.rs` needs. The target includes the
+/// real normalizer but supplies tiny adapter types for `PathDependency` and
+/// `Directory`, avoiding broad library-module inclusion and the dead surfaces
+/// that come with it.
 #[path = "../../src/internal"]
 mod internal {
-    // Each inline module carries a `#[path]` pointing at the matching real
-    // directory under `src/internal/`, so the nested file includes resolve
-    // through directories that physically exist; a bare `../`-chain would instead
-    // traverse the non-existent `fuzz_targets/internal/…` directories that inline
-    // modules otherwise imply, and fail.
-    #[path = "model.rs"]
-    #[allow(
-        dead_code,
-        unreachable_pub,
-        reason = "the fuzz target uses only PathDependency from this module, so its other items look dead; and `Expected` is `pub` for the library's public API (re-exported at the crate root) yet unreachable in this white-box fuzz binary, which has no public API"
-    )]
-    pub(in crate::internal) mod model;
+    /// Shared value types used by the included normalizer.
+    pub(in crate::internal) mod model {
+        use crate::internal::sys::directory::Directory;
 
-    /// Host-system types — only `Directory` is exercised here.
-    #[path = "sys"]
+        /// A path dependency whose on-disk location is normalized out of diagnostics.
+        pub(in crate::internal) struct PathDependency {
+            /// The dependency's crate name.
+            pub(in crate::internal) name: String,
+            /// The canonicalized path to the dependency on disk.
+            pub(in crate::internal) normalized_path: Directory,
+        }
+    }
+
+    /// Host-system types used by the included normalizer.
     pub(in crate::internal) mod sys {
-        #[path = "directory.rs"]
-        #[allow(dead_code, reason = "only Directory::new is used by the fuzz target")]
-        pub(in crate::internal) mod directory;
+        /// Directory path wrapper matching the normalizer-facing library contract.
+        pub(in crate::internal) mod directory {
+            use std::borrow::Cow;
+            use std::path::PathBuf;
+
+            /// A filesystem directory path.
+            pub(in crate::internal) struct Directory {
+                /// The displayed path, always carrying a trailing separator.
+                display: String,
+            }
+
+            impl Directory {
+                /// Wraps `path`, appending a trailing separator so it reads as a directory.
+                pub(in crate::internal) fn new<P: Into<PathBuf>>(input: P) -> Self {
+                    let mut path = input.into();
+                    path.push("");
+                    let display = path.to_string_lossy().into_owned();
+                    Self {
+                        display,
+                    }
+                }
+
+                /// The path as a possibly-lossy UTF-8 string.
+                pub(in crate::internal) fn to_string_lossy(&self) -> Cow<'_, str> {
+                    Cow::Borrowed(&self.display)
+                }
+            }
+        }
     }
 
     /// The diagnostic normalizer under test.
     #[path = "diagnostics"]
     pub(in crate::internal) mod diagnostics {
         #[path = "normalize.rs"]
-        #[allow(
-            dead_code,
-            clippy::single_call_fn,
-            reason = "the fuzz target white-box-includes only normalize.rs, so its unexercised items look dead and `trim` looks single-call even though the library build also calls it from `report::message`"
-        )]
         pub(in crate::internal) mod normalize;
     }
 
@@ -72,6 +81,11 @@ mod internal {
                 normalized_path: Directory::new("/home/user/documents/rust/diesel/diesel"),
             }],
         };
-        drop(normalize::diagnostics(string, &context));
+        let mut variations = normalize::diagnostics(string, &context);
+        let preferred = variations.preferred();
+        let _matches_preferred = variations.any(|candidate| candidate == preferred);
+        let empty = normalize::diagnostics("", &context);
+        variations.concat(&empty);
+        drop(normalize::trim(string.as_bytes()));
     });
 }

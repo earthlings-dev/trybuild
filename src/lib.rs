@@ -234,13 +234,6 @@
 //! ```
 
 #![doc(html_root_url = "https://docs.rs/trybuild/1.0.117")]
-#![cfg_attr(
-  not(check_cfg),
-  allow(
-    unexpected_cfgs,
-    reason = "the check_cfg cfg is set by build.rs only when the compiler supports it"
-  )
-)]
 
 mod internal;
 

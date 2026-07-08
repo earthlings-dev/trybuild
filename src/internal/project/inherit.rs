@@ -14,10 +14,6 @@ use serde_derive::Deserialize;
 #[serde(deny_unknown_fields)]
 pub(super) struct InheritEdition {
   /// Must be `true`; deserialized only to validate the `workspace = true` shape.
-  #[allow(
-    dead_code,
-    reason = "deserialized only to validate the `workspace = true` shape; the field's value is never read"
-  )]
   pub workspace: True,
 }
 

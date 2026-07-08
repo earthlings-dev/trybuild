@@ -1,12 +1,6 @@
 //! Reading the crate-under-test's manifest — and its workspace's `[workspace]`,
 //! `[patch]`, and `[replace]` sections — and rewriting relative path
 //! dependencies so the generated project resolves them from its own location.
-#![allow(
-  clippy::same_name_method,
-  reason = "serde's `remote = \"Self\"` makes the `Dependency` derive generate inherent `serialize`/`deserialize` fns that the \
-            hand-written `Serialize`/`Deserialize` impls delegate to; same_name_method targets that derive-generated inherent impl, which \
-            cannot carry its own attribute, so it is suppressed at module scope"
-)]
 
 use std::collections::BTreeMap as Map;
 use std::fmt;
@@ -20,6 +14,7 @@ use serde::de::Visitor;
 use serde::de::value::MapAccessDeserializer;
 use serde::de::value::StrDeserializer;
 use serde::ser::Serialize;
+use serde::ser::SerializeMap as _;
 use serde::ser::Serializer;
 use serde_derive::Deserialize;
 use serde_derive::Serialize;
@@ -223,33 +218,54 @@ pub(in crate::internal) struct GitSource {
 
 /// A single dependency entry, accepting both the `"1.2.3"` shorthand and the
 /// `{ version = "1.2.3", ... }` table form.
-#[derive(Serialize, Deserialize, Clone, Debug)]
-#[serde(remote = "Self")]
+#[derive(Clone, Debug)]
 pub(in crate::internal) struct Dependency {
   /// The version requirement.
-  #[serde(skip_serializing_if = "Option::is_none")]
   pub version:          Option<String>,
   /// A path dependency's location.
-  #[serde(skip_serializing_if = "Option::is_none")]
   pub path:             Option<Directory>,
   /// Whether the dependency is optional.
-  #[serde(default, skip_serializing_if = "is_false")]
   pub optional:         bool,
   /// Whether the dependency's default features are enabled.
-  #[serde(rename = "default-features", skip_serializing_if = "Option::is_none")]
   pub default_features: Option<bool>,
   /// The enabled features.
-  #[serde(default, skip_serializing_if = "Vec::is_empty")]
   pub features:         Vec<String>,
   /// A git dependency's source coordinates.
-  #[serde(flatten)]
   pub git:              GitSource,
   /// Whether the dependency is inherited from the workspace.
-  #[serde(default, skip_serializing_if = "is_false")]
   pub workspace:        bool,
   /// Any other keys, preserved verbatim for re-serialization.
-  #[serde(flatten)]
   pub rest:             Map<String, Value>,
+}
+
+/// The table-form fields of a dependency entry, deserialized before conversion
+/// into [`Dependency`].
+#[derive(Deserialize, Default)]
+struct DependencyFields {
+  /// The version requirement.
+  #[serde(default)]
+  version:          Option<String>,
+  /// A path dependency's location.
+  #[serde(default)]
+  path:             Option<Directory>,
+  /// Whether the dependency is optional.
+  #[serde(default)]
+  optional:         bool,
+  /// Whether the dependency's default features are enabled.
+  #[serde(rename = "default-features", default)]
+  default_features: Option<bool>,
+  /// The enabled features.
+  #[serde(default)]
+  features:         Vec<String>,
+  /// A git dependency's source coordinates.
+  #[serde(flatten)]
+  git:              GitSource,
+  /// Whether the dependency is inherited from the workspace.
+  #[serde(default)]
+  workspace:        bool,
+  /// Any other keys, preserved verbatim for re-serialization.
+  #[serde(flatten)]
+  rest:             Map<String, Value>,
 }
 
 /// The dependency tables under a `[target.'cfg(...)']` section.
@@ -285,16 +301,6 @@ pub(in crate::internal) struct Patch {
   pub rest: Map<String, Value>,
 }
 
-/// serde `skip_serializing_if` predicate: whether a boolean is `false`.
-#[allow(
-  clippy::trivially_copy_pass_by_ref,
-  reason = "serde invokes a `skip_serializing_if` predicate as `fn(&T) -> bool`; the `&bool` receiver is mandated by that call signature, \
-            not a missed by-value optimization"
-)]
-const fn is_false(boolean: &bool) -> bool {
-  !*boolean
-}
-
 impl Default for EditionOrInherit {
   fn default() -> Self {
     Self::Edition(Edition::default())
@@ -328,7 +334,9 @@ impl<'de> Deserialize<'de> for EditionOrInherit {
       {
         // Deserialize only to validate the `workspace = true` shape; the
         // value itself carries no data we need to keep.
-        let _validated = InheritEdition::deserialize(MapAccessDeserializer::new(map))?;
+        let InheritEdition {
+          workspace: _workspace,
+        } = InheritEdition::deserialize(MapAccessDeserializer::new(map))?;
         Ok(EditionOrInherit::Inherit)
       }
     }
@@ -342,7 +350,41 @@ impl Serialize for Dependency {
   where
     S: Serializer,
   {
-    Self::serialize(self, serializer)
+    let mut map = serializer.serialize_map(None)?;
+    if let Some(version) = self.version.as_ref() {
+      map.serialize_entry("version", version)?;
+    }
+    if let Some(path) = self.path.as_ref() {
+      map.serialize_entry("path", path)?;
+    }
+    if self.optional {
+      map.serialize_entry("optional", &self.optional)?;
+    }
+    if let Some(default_features) = self.default_features {
+      map.serialize_entry("default-features", &default_features)?;
+    }
+    if !self.features.is_empty() {
+      map.serialize_entry("features", &self.features)?;
+    }
+    if let Some(repository) = self.git.repository.as_ref() {
+      map.serialize_entry("git", repository)?;
+    }
+    if let Some(branch) = self.git.branch.as_ref() {
+      map.serialize_entry("branch", branch)?;
+    }
+    if let Some(tag) = self.git.tag.as_ref() {
+      map.serialize_entry("tag", tag)?;
+    }
+    if let Some(rev) = self.git.rev.as_ref() {
+      map.serialize_entry("rev", rev)?;
+    }
+    if self.workspace {
+      map.serialize_entry("workspace", &self.workspace)?;
+    }
+    for (key, extra_value) in &self.rest {
+      map.serialize_entry(key, extra_value)?;
+    }
+    map.end()
   }
 }
 
@@ -380,11 +422,33 @@ impl<'de> Deserialize<'de> for Dependency {
       where
         M: de::MapAccess<'de>,
       {
-        Dependency::deserialize(MapAccessDeserializer::new(map))
+        let fields = DependencyFields::deserialize(MapAccessDeserializer::new(map))?;
+        Ok(fields.into_dependency())
       }
     }
 
     deserializer.deserialize_any(DependencyVisitor)
+  }
+}
+
+impl DependencyFields {
+  /// Converts deserialized table fields into the dependency representation used
+  /// by the generated-project builder.
+  #[allow(
+    clippy::single_call_fn,
+    reason = "the conversion names the boundary between serde's table helper and the dependency model used by project synthesis"
+  )]
+  fn into_dependency(self) -> Dependency {
+    Dependency {
+      version:          self.version,
+      path:             self.path,
+      optional:         self.optional,
+      default_features: self.default_features,
+      features:         self.features,
+      git:              self.git,
+      workspace:        self.workspace,
+      rest:             self.rest,
+    }
   }
 }
 
@@ -681,6 +745,54 @@ default-features = true
       dep.rest.contains_key("package"),
       "known git keys land in GitSource while unknown keys remain in rest",
     )
+  }
+
+  #[test]
+  fn dependency_boolean_flags_serialize_only_when_enabled() -> Result<(), TestFailure> {
+    let mut enabled = Map::new();
+    let _inserted_enabled = enabled.insert("dep".to_owned(), Dependency {
+      version:          Some("1.0.0".to_owned()),
+      path:             None,
+      optional:         true,
+      default_features: None,
+      features:         Vec::new(),
+      git:              GitSource::default(),
+      workspace:        true,
+      rest:             Map::new(),
+    });
+    let mut disabled = Map::new();
+    let _inserted_disabled = disabled.insert("dep".to_owned(), Dependency {
+      version:          Some("1.0.0".to_owned()),
+      path:             None,
+      optional:         false,
+      default_features: None,
+      features:         Vec::new(),
+      git:              GitSource::default(),
+      workspace:        false,
+      rest:             Map::new(),
+    });
+
+    let enabled_rendered = ensure_ok_source(toml::to_string(&enabled), "enabled dependency flags serialize")?;
+    let disabled_rendered = ensure_ok_source(toml::to_string(&disabled), "disabled dependency flags serialize")?;
+
+    ensure_all(&[
+      (
+        enabled_rendered.contains("optional = true"),
+        "optional dependencies serialize their enabled flag",
+      ),
+      (
+        enabled_rendered.contains("workspace = true"),
+        "workspace dependencies serialize their enabled flag",
+      ),
+      (
+        !disabled_rendered.contains("optional"),
+        "non-optional dependencies omit the default false flag",
+      ),
+      (
+        !disabled_rendered.contains("workspace"),
+        "non-workspace dependencies omit the default false flag",
+      ),
+    ])
   }
 
   #[test]

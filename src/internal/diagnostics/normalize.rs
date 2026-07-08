@@ -922,57 +922,169 @@ fn indented_line_kind(
 ) -> IndentedLineKind {
   let previous_line_was_note = mem::replace(previous_line_is_note, false);
 
-  if let Some(heading_len) = if line.starts_with("error") {
+  if is_diagnostic_heading(line) || is_heading_note(line, first_line_in_block, normalization) {
+    return IndentedLineKind::Heading;
+  }
+
+  if is_note_continuation(line, previous_line_was_note, normalization) {
+    *previous_line_is_note = true;
+    return IndentedLineKind::Note;
+  }
+
+  if let Some(spaces) = ellipsis_code_indent(line) {
+    return IndentedLineKind::Code(spaces);
+  }
+
+  let source_line = SourceLine::parse(line);
+  if let Some(indent) = source_line.code_indent(normalization) {
+    return IndentedLineKind::Code(indent);
+  }
+
+  IndentedLineKind::Other(source_line.other_indent())
+}
+
+/// Whether `line` starts a diagnostic heading.
+#[allow(
+  clippy::single_call_fn,
+  reason = "heading recognition is a named part of indented-line classification, separated from note and source-line parsing"
+)]
+fn is_diagnostic_heading(line: &str) -> bool {
+  let heading_len = if line.starts_with("error") {
     Some("error".len())
   } else if line.starts_with("warning") {
     Some("warning".len())
   } else {
     None
-  } && line.get(heading_len..).unwrap_or("").starts_with(&[':', '['][..])
-  {
-    return IndentedLineKind::Heading;
-  }
+  };
+  heading_len.is_some_and(|len| line.get(len..).unwrap_or("").starts_with(&[':', '['][..]))
+}
 
-  if first_line_in_block && normalization >= HeadingNote && line.starts_with("note: ") {
-    return IndentedLineKind::Heading;
-  }
+/// Whether a top-of-block note is promoted to a heading by the current
+/// normalization step.
+#[allow(
+  clippy::single_call_fn,
+  reason = "heading-note promotion is a distinct historical normalization rule within indented-line classification"
+)]
+fn is_heading_note(line: &str, first_line_in_block: bool, normalization: Normalization) -> bool {
+  first_line_in_block && normalization >= HeadingNote && line.starts_with("note: ")
+}
 
-  if line.starts_with("note:")
+/// Whether `line` is a note/help/ellipsis continuation in an unindent block.
+#[allow(
+  clippy::single_call_fn,
+  reason = "note-continuation recognition names the stateful previous-note rule outside the main classifier"
+)]
+fn is_note_continuation(line: &str, previous_line_was_note: bool, normalization: Normalization) -> bool {
+  line.starts_with("note:")
     || line == "..."
     || normalization >= UnindentAfterHelp && line.starts_with("help:")
     || normalization >= UnindentMultilineNote && previous_line_was_note && line.starts_with("      ")
-  {
-    *previous_line_is_note = true;
-    return IndentedLineKind::Note;
-  }
+}
 
+/// The cuttable indentation of an ellipsis-prefixed code line.
+#[allow(
+  clippy::single_call_fn,
+  reason = "ellipsis-code indentation is a rustc-rendering special case separated from numbered source-line parsing"
+)]
+fn ellipsis_code_indent(line: &str) -> Option<usize> {
   let is_space = |byte: &u8| *byte == b' ';
-  if let Some(rest) = line.strip_prefix("... ") {
-    let spaces = rest.bytes().take_while(is_space).count();
-    return IndentedLineKind::Code(spaces);
-  }
+  line.strip_prefix("... ").map(|rest| rest.bytes().take_while(is_space).count())
+}
 
-  let mut spaces = line.bytes().take_while(is_space).count();
-  let digits = line.get(spaces..).unwrap_or("").bytes().take_while(u8::is_ascii_digit).count();
-  spaces = spaces.saturating_add(
-    line
-      .get(spaces.saturating_add(digits)..)
+/// Parsed shape of a bordered rustc source line.
+struct SourceLine<'a> {
+  /// The number of spaces before the source-border marker, excluding digits.
+  source_indent:   usize,
+  /// Whether the line carried a right-aligned source line number.
+  has_line_number: bool,
+  /// The line content after indentation, optional digits, and following spaces.
+  rest:            &'a str,
+}
+
+impl<'a> SourceLine<'a> {
+  /// Parses the indentation, optional line-number column, and content marker.
+  #[allow(
+    clippy::single_call_fn,
+    reason = "source-line parsing names the column decomposition consumed by the code and ordinary-text classifiers"
+  )]
+  fn parse(line: &'a str) -> Self {
+    let leading_spaces = line.bytes().take_while(|byte| *byte == b' ').count();
+    let digits = line
+      .get(leading_spaces..)
       .unwrap_or("")
       .bytes()
-      .take_while(is_space)
-      .count(),
-  );
-  let rest = line.get(digits.saturating_add(spaces)..).unwrap_or("");
-  if spaces > 0
-    && (rest == "|"
-      || rest.starts_with("| ")
-      || normalization >= UnindentSuggestion
-        && digits > 0
-        && (rest == "~" || rest.starts_with("~ ") || rest == "+" || rest.starts_with("+ ") || rest == "-" || rest.starts_with("- "))
-      || digits == 0 && (rest.starts_with("--> ") || rest.starts_with("::: ") || rest.starts_with("= ")))
-  {
-    return IndentedLineKind::Code(spaces.saturating_sub(1));
+      .take_while(u8::is_ascii_digit)
+      .count();
+    let spaces_after_digits = line
+      .get(leading_spaces.saturating_add(digits)..)
+      .unwrap_or("")
+      .bytes()
+      .take_while(|byte| *byte == b' ')
+      .count();
+    let source_indent = leading_spaces.saturating_add(spaces_after_digits);
+    let content_start = leading_spaces.saturating_add(digits).saturating_add(spaces_after_digits);
+    Self {
+      source_indent,
+      has_line_number: digits > 0,
+      rest: line.get(content_start..).unwrap_or(""),
+    }
   }
 
-  IndentedLineKind::Other(if digits == 0 { spaces } else { 0 })
+  /// The unindent block's cuttable source indentation, if this is a code row.
+  #[allow(
+    clippy::single_call_fn,
+    reason = "code-indent classification is the source-line object's primary query and keeps the marker rules grouped"
+  )]
+  fn code_indent(&self, normalization: Normalization) -> Option<usize> {
+    if self.source_indent == 0 {
+      return None;
+    }
+    if self.is_source_border() || self.is_suggestion(normalization) || !self.has_line_number && self.is_source_location_or_note() {
+      return Some(self.source_indent.saturating_sub(1));
+    }
+    None
+  }
+
+  /// The indentation used when this row is ordinary text rather than code.
+  #[allow(
+    clippy::single_call_fn,
+    reason = "ordinary-text indentation is the paired fallback query to code_indent in the unindent classifier"
+  )]
+  const fn other_indent(&self) -> usize {
+    if self.has_line_number { 0 } else { self.source_indent }
+  }
+
+  /// Whether the row is a normal `|` source-code border line.
+  #[allow(
+    clippy::single_call_fn,
+    reason = "source-border recognition names one marker family inside the source-line code classifier"
+  )]
+  fn is_source_border(&self) -> bool {
+    self.rest == "|" || self.rest.starts_with("| ")
+  }
+
+  /// Whether the row is a rustc suggestion insertion/deletion/replacement line.
+  #[allow(
+    clippy::single_call_fn,
+    reason = "suggestion recognition names the historical unindent rule for numbered rustc suggestion rows"
+  )]
+  fn is_suggestion(&self, normalization: Normalization) -> bool {
+    normalization >= UnindentSuggestion
+      && self.has_line_number
+      && (self.rest == "~"
+        || self.rest.starts_with("~ ")
+        || self.rest == "+"
+        || self.rest.starts_with("+ ")
+        || self.rest == "-"
+        || self.rest.starts_with("- "))
+  }
+
+  /// Whether the row is a location, secondary location, or note marker line.
+  #[allow(
+    clippy::single_call_fn,
+    reason = "location-marker recognition names the unnumbered rustc marker family inside the source-line classifier"
+  )]
+  fn is_source_location_or_note(&self) -> bool {
+    self.rest.starts_with("--> ") || self.rest.starts_with("::: ") || self.rest.starts_with("= ")
+  }
 }

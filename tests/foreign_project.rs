@@ -46,11 +46,13 @@ mod tests {
   fn try_run_sets_up_foreign_projects_and_surfaces_dependency_failures() -> Result<(), TestFailure> {
     let lock_crate = TempDir::new("foreign-lock")?;
     write_foreign_crate(lock_crate.path(), "trybuild-foreign-lock", "pub fn value() -> u8 { 1 }\n")?;
-    let generated_lockfile = lock_crate.child("target/tests/trybuild/trybuild-foreign-lock/Cargo.lock");
+    let lock_target = lock_crate.child("target-root");
+    let generated_lockfile = lock_target.join("tests/trybuild/trybuild-foreign-lock/Cargo.lock");
     let lockfile_child = capture_ignored_test_with("tests::lockfile_generation_child", |command| {
       let _: &mut Command = command
         .current_dir(lock_crate.path())
-        .env("CARGO_MANIFEST_DIR", lock_crate.path());
+        .env("CARGO_MANIFEST_DIR", lock_crate.path())
+        .env("CARGO_TARGET_DIR", &lock_target);
     })?;
 
     let broken_crate = TempDir::new("foreign-broken")?;
@@ -59,10 +61,12 @@ mod tests {
       "trybuild-foreign-broken",
       "pub fn broken() { let _: u8 = \"no\"; }\n",
     )?;
+    let broken_target = broken_crate.child("target-root");
     let dependency_child = capture_ignored_test_with("tests::dependency_build_failure_child", |command| {
       let _: &mut Command = command
         .current_dir(broken_crate.path())
-        .env("CARGO_MANIFEST_DIR", broken_crate.path());
+        .env("CARGO_MANIFEST_DIR", broken_crate.path())
+        .env("CARGO_TARGET_DIR", &broken_target);
     })?;
 
     ensure_all(&[

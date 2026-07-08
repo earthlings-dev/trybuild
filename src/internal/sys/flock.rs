@@ -33,25 +33,10 @@ static LOCK: Mutex<()> = Mutex::new(());
 
 /// The acquired build lock, releasing both layers when dropped.
 pub(in crate::internal) struct Lock {
-  /// Holds the process-global mutex.
-  intraprocess_guard: Guard,
   /// Holds the cross-process lockfile, if one could be taken.
-  lockfile:           FileLock,
-}
-
-/// The intraprocess half of the lock, coordinating `#[test]` functions within
-/// the *same* test binary.
-enum Guard {
-  /// Not (or no longer) holding the mutex.
-  NotLocked,
-  /// Holding the process-global mutex guard.
-  Locked(
-    #[expect(
-      dead_code,
-      reason = "the guard is held only to keep the mutex locked until Lock is dropped"
-    )]
-    MutexGuard<'static, ()>,
-  ),
+  lockfile:            FileLock,
+  /// Holds the process-global mutex until the file lock has been released.
+  _intraprocess_guard: MutexGuard<'static, ()>,
 }
 
 /// The cross-process half of the lock: a best-effort lockfile coordinating
@@ -76,21 +61,11 @@ impl Lock {
               module documents"
   )]
   pub(in crate::internal) fn acquire(path: impl AsRef<Path>) -> Result<Self> {
+    let intraprocess_guard = LOCK.lock();
     Ok(Self {
-      intraprocess_guard: Guard::acquire(),
-      lockfile:           FileLock::acquire(path)?,
+      lockfile:            FileLock::acquire(path)?,
+      _intraprocess_guard: intraprocess_guard,
     })
-  }
-}
-
-impl Guard {
-  /// Takes the process-global mutex.
-  #[allow(
-    clippy::single_call_fn,
-    reason = "the intraprocess-layer constructor, named to mirror FileLock::acquire across the two cooperating halves of the lock"
-  )]
-  fn acquire() -> Self {
-    Self::Locked(LOCK.lock())
   }
 }
 
@@ -126,9 +101,8 @@ impl FileLock {
 
 impl Drop for Lock {
   fn drop(&mut self) {
-    // Unlock file lock first.
+    // Release the file lock while the in-process mutex is still held.
     self.lockfile = FileLock::NotLocked;
-    self.intraprocess_guard = Guard::NotLocked;
   }
 }
 
@@ -154,32 +128,23 @@ impl Drop for FileLock {
   clippy::single_call_fn,
   reason = "a documented helper encapsulating the stale/future lockfile-busting loop, kept out of FileLock::acquire's happy path"
 )]
-#[allow(
-  clippy::wildcard_enum_match_arm,
-  reason = "matching `io::ErrorKind`, which is `#[non_exhaustive]`: a catch-all arm is mandatory and the dozens of named variants carry \
-            no distinct handling here"
-)]
 fn create(path: &Path) -> Option<File> {
   loop {
     match OpenOptions::new().write(true).create_new(true).open(path) {
       // Acquired lock by creating lockfile.
       Ok(lockfile) => return Some(lockfile),
-      Err(io_error) => match io_error.kind() {
-        // Lock is already held by another test.
-        io::ErrorKind::AlreadyExists => {}
-        // File based locking isn't going to work for some reason.
-        _ => return None,
-      },
+      // Lock is already held by another test.
+      Err(io_error) if io_error.kind() == io::ErrorKind::AlreadyExists => {}
+      // File based locking isn't going to work for some reason.
+      Err(_io_error) => return None,
     }
 
     // Check whether it's okay to bust the lock.
     let metadata = match fs::metadata(path) {
       Ok(metadata) => metadata,
-      Err(io_error) => match io_error.kind() {
-        // Other holder of the lock finished. Retry.
-        io::ErrorKind::NotFound => continue,
-        _ => return None,
-      },
+      // Other holder of the lock finished. Retry.
+      Err(io_error) if io_error.kind() == io::ErrorKind::NotFound => continue,
+      Err(_io_error) => return None,
     };
 
     let Ok(system_time) = metadata.modified() else {
@@ -194,10 +159,8 @@ fn create(path: &Path) -> Option<File> {
     if stale || future {
       match fs::remove_file(path) {
         Ok(()) => continue,
-        Err(io_error) => match io_error.kind() {
-          io::ErrorKind::NotFound => continue,
-          _ => return None,
-        },
+        Err(io_error) if io_error.kind() == io::ErrorKind::NotFound => continue,
+        Err(_io_error) => return None,
       }
     }
 
@@ -339,6 +302,29 @@ mod tests {
     ])
   }
 
+  #[cfg(unix)]
+  #[test]
+  fn poll_stops_when_timestamp_refresh_fails() -> StdResult<(), TestFailure> {
+    let lockfile = ensure_ok_source(File::open("/dev/null"), "unix null device can be opened")?;
+    let times = FileTimes::new().set_modified(SystemTime::from(Utc::now()));
+    let refresh_fails = lockfile.set_times(times).is_err();
+    let done = AtomicBool::new(!refresh_fails);
+
+    poll(&lockfile, &done);
+
+    if refresh_fails {
+      ensure(
+        !done.load(Ordering::Acquire),
+        "timestamp-refresh failures stop poll without mutating the signal",
+      )
+    } else {
+      ensure(
+        done.load(Ordering::Acquire),
+        "platforms that allow timestamp refreshes exit safely when pre-signalled",
+      )
+    }
+  }
+
   #[test]
   fn lock_acquire_removes_lockfile_on_drop() -> StdResult<(), TestFailure> {
     let fixture = TempDir::new("flock-acquire")?;
@@ -349,5 +335,40 @@ mod tests {
     };
 
     ensure(!path.exists(), "dropping the lock removes the lockfile")
+  }
+
+  #[test]
+  fn lock_acquire_falls_back_when_lockfile_is_unavailable() -> StdResult<(), TestFailure> {
+    let fixture = TempDir::new("flock-unavailable")?;
+    let unavailable = fixture.child("missing").join("lock");
+
+    let lock = ensure_ok_source(
+      Lock::acquire(&unavailable),
+      "composite lock can fall back when the file-lock path is unavailable",
+    )?;
+    ensure(
+      !unavailable.exists(),
+      "falling back to the process mutex does not create the unavailable lockfile",
+    )?;
+    drop(lock);
+
+    ensure(
+      !unavailable.exists(),
+      "dropping the fallback lock leaves the unavailable path untouched",
+    )
+  }
+
+  #[test]
+  fn lock_can_be_reacquired_after_drop() -> StdResult<(), TestFailure> {
+    let fixture = TempDir::new("flock-reacquire")?;
+    let path = fixture.child("reacquired.lock");
+    let first = ensure_ok_source(Lock::acquire(&path), "first lock can be acquired")?;
+    ensure(path.exists(), "first acquisition creates the lockfile")?;
+    drop(first);
+    let second = ensure_ok_source(Lock::acquire(&path), "second lock can be acquired")?;
+    ensure(path.exists(), "second acquisition recreates the lockfile")?;
+    drop(second);
+
+    ensure(!path.exists(), "dropping the second lock removes the lockfile")
   }
 }

@@ -1,0 +1,11 @@
+error[E0004]: non-exhaustive patterns: `Missing` not covered
+   --> src/main.rs:108:11
+    |
+108 |     match value {
+    |           ^^^^^ pattern `Missing` not covered
+    |
+help: ensure that all possible cases are being handled by adding a match arm with a wildcard pattern or an explicit pattern as shown
+    |
+100 ~         Present => {}
+101 +         Missing => {}
+    |
