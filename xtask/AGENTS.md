@@ -48,7 +48,7 @@ Use `CommandContext::process()` / `ProcessRunner`, or the matching `Runtime` met
 
 Non-zero exits should normally become `XtaskError::CommandFailed`. Use tolerant execution only for expected optional probes, and emit a clear skip/status line when continuing after a failure.
 
-Keep workflows idempotent. Re-running `just init`, `just gen-lint-template`, `just gen-agent-guidance`, or similar maintenance commands should either produce the same files or a clear deterministic update. Validate output paths so generated files do not escape the workspace; mirror the existing `coverage --output` and generated-output parsing style for path guards.
+Keep workflows idempotent. Re-running `just init`, `just gen-lint-template`, `just gen-md`, or similar maintenance commands should either produce the same files or a clear deterministic update. Validate output paths so generated files do not escape the workspace; mirror the existing `coverage --output` and generated-output parsing style for path guards.
 
 ## Errors and output
 
