@@ -46,13 +46,17 @@ The template registry may start empty. `just x` should still exist and report th
 
 Use `CommandContext::process()` / `ProcessRunner`, or the matching `Runtime` methods, instead of hand-built shell strings. Pass programs and arguments separately, and choose the appropriate `ToolColor` strategy (`CargoGlobal`, `CargoNextest`, `CargoLlvmCov`, captured-machine output, or no color) so forwarded tools respect the same color policy as `xtask`. Avoid `bash -c` unless the task is intrinsically shell behavior and there is no reasonable Rust or direct-process alternative.
 
-Non-zero exits should normally become `XtaskError::CommandFailed`. Use tolerant execution only for expected optional probes, and emit a clear skip/status line when continuing after a failure.
+Classify a non-zero exit in the layer that actually executes the process, using that layer's dedicated command-failure variant. Do not relabel a dependency-owned process failure as if the calling workflow had spawned it. Use tolerant execution only for expected optional probes, and emit a clear skip/status line when continuing after a failure.
 
 Keep workflows idempotent. Re-running `just init`, `just gen-lint-template`, `just gen-md`, or similar maintenance commands should either produce the same files or a clear deterministic update. Validate output paths so generated files do not escape the workspace; mirror the existing `coverage --output` and generated-output parsing style for path guards.
 
 ## Errors and output
 
-Keep the typed error model. Do not introduce `anyhow`, `std::io::Error::new`, `std::io::Error::other`, or stringly failure plumbing. `XtaskError` derives `thiserror::Error`; when a workflow has a new failure mode, add a variant with its `#[error("...")]` message (a user-visible contract), `#[from]`/`#[source]` for any underlying cause, and a focused test pinning the rendered string.
+Keep the typed error model. Do not introduce `anyhow`, `std::io::Error::new`, `std::io::Error::other`, or stringly failure plumbing. Each reusable crate defines and owns its own `thiserror::Error` enum; when that crate gains a failure mode, add a dedicated variant with its `#[error("...")]` message as a user-visible contract, preserve underlying causes with `#[from]` / `#[source]`, and add a focused behavior test.
+
+Wrap dependency-owned errors transparently instead of cloning their taxonomy. A workflow error enum may use a transparent `#[from]` variant for an owning dependency, but it must not exhaustively translate, duplicate, rename, or stringify the dependency's variants. Mark public error enums `#[non_exhaustive]` so downstream consumers cannot make lockstep exhaustive matches into a cross-crate coupling mechanism.
+
+Adapt domain errors into the core runner only at command-registration, pre-commit, or equivalent execution boundaries, using the core API that preserves the original error as an `Error::source()`. Never convert a domain error to a message-only fallback merely to satisfy the runner's return type.
 
 All fallible public functions need a `# Errors` doc section. Prefer private helpers for detailed phases so the public function reads as the command's high-level contract.
 

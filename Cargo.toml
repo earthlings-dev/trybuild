@@ -94,7 +94,7 @@ toml_edit = "0.25"
 anstyle = "1"
 snapbox = { version = "1.2", features = ["diff"], default-features = false }
 parking_lot = "0.12"
-proptest = { git = "ssh://git@github.com/strict-rs/strict-proptest.git", branch = "strict", version = "1.11", features = ["std"], default-features = false }
+proptest = { git = "ssh://git@github.com/strict-rs/strict-proptest.git", branch = "strict", version = "2", features = ["std"], default-features = false }
 
 [patch.crates-io]
 
