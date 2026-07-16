@@ -26,7 +26,7 @@ mod tests {
   /// outcome variant — the both-polarity coverage of every outcome.
   #[allow(
     clippy::single_call_fn,
-    reason = "extracted from try_run_reports_typed_outcomes_child to keep that test within the line budget; one in-crate caller"
+    reason = "the typed-outcome taxonomy assertion keeps every success and failure polarity in one exhaustive behavioral contract"
   )]
   fn verify_outcome_polarities(report: &trybuild::Report) -> Result<(), TestFailure> {
     ensure_all(&[
@@ -83,7 +83,7 @@ mod tests {
   /// Asserts the mismatch carries both sides of the diff as data, not printed.
   #[allow(
     clippy::single_call_fn,
-    reason = "extracted from try_run_reports_typed_outcomes_child to keep that test within the line budget; one in-crate caller"
+    reason = "mismatch payload validation is the independent contract proving expected and actual diagnostics are returned as data"
   )]
   fn verify_mismatch_diff(report: &trybuild::Report) -> Result<(), TestFailure> {
     let mismatch_detail = report

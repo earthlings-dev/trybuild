@@ -41,8 +41,7 @@ mod r#impl {
     /// little text in common).
     #[allow(
       clippy::single_call_fn,
-      reason = "the diff constructor named on Diff's API and mirrored across both feature-gated impls so message::snippet_diff calls \
-                Diff::compute either way"
+      reason = "the feature-stable diff contract validates size, character domain, and commonality before exposing highlighted chunks"
     )]
     pub(in crate::internal) fn compute(expected: &'a str, actual: &'a str) -> Option<Self> {
       if expected.len().saturating_add(actual.len()) > 2048 {
@@ -179,8 +178,7 @@ mod r#impl {
     /// Always `None`: there is no diff to compute when the feature is off.
     #[allow(
       clippy::single_call_fn,
-      reason = "the diff constructor named on Diff's API and mirrored across both feature-gated impls so message::snippet_diff calls \
-                Diff::compute either way"
+      reason = "the feature-stable diff contract remains inert when highlighting support is unavailable"
     )]
     pub(in crate::internal) const fn compute(_expected: &'a str, _actual: &'a str) -> Option<Self> {
       None

@@ -183,7 +183,7 @@ fn record_case(
 /// [`CaseReport::outcome`], not this outer `Err`.
 #[allow(
   clippy::single_call_fn,
-  reason = "the programmatic orchestration entry point invoked from TestCases::try_run, paired with run on this module's surface"
+  reason = "terminal-free orchestration returns the complete per-case outcome model without invoking the human rendering layer"
 )]
 pub(in crate::internal) fn try_run(registered: &[Test], update: Update) -> error::Result<Report> {
   compute(registered, update, &mut |_case, _show_expected| {})
@@ -199,7 +199,7 @@ pub(in crate::internal) fn try_run(registered: &[Test], update: Update) -> error
 /// up.
 #[allow(
   clippy::single_call_fn,
-  reason = "the human orchestration entry point invoked from TestCases::run, paired with try_run on this module's surface"
+  reason = "human orchestration owns environment-selected reconciliation, streaming terminal rendering, and aggregate failure semantics"
 )]
 pub(in crate::internal) fn run(registered: &[Test]) -> error::Result<()> {
   let mut reporter = Reporter::new();
@@ -237,7 +237,7 @@ pub(in crate::internal) fn run(registered: &[Test]) -> error::Result<()> {
 /// Collapses a per-fixture [`Report`] into the aggregate `run()` result.
 #[allow(
   clippy::single_call_fn,
-  reason = "the named aggregate-collapse step of run, kept separate from the streaming render so the count logic reads on its own"
+  reason = "aggregate collapse defines failure-count precedence over newly created snapshot outcomes for the human run contract"
 )]
 fn aggregate(report: &Report) -> error::Result<()> {
   let total = report.cases.len();
@@ -273,7 +273,7 @@ fn aggregate(report: &Report) -> error::Result<()> {
 /// and builds the generated manifest under the requested `update` mode.
 #[allow(
   clippy::single_call_fn,
-  reason = "a named orchestration phase — synthesizing the throwaway project — in compute's linear pipeline"
+  reason = "project preparation is the orchestration phase that converts registered cases and Cargo metadata into one throwaway build model"
 )]
 fn prepare(tests: &[ExpandedTest], update: Update) -> error::Result<Project> {
   let Metadata {
@@ -326,7 +326,7 @@ fn prepare(tests: &[ExpandedTest], update: Update) -> error::Result<Project> {
 /// Discovers non-workspace path dependencies from the crate-under-test manifest.
 #[allow(
   clippy::single_call_fn,
-  reason = "path dependency selection is pure project policy split from prepare's filesystem and cargo metadata shell"
+  reason = "path-dependency selection excludes workspace members and canonicalizes only external dependencies for diagnostic normalization"
 )]
 fn path_dependencies_of(source_manifest: &dependencies::Manifest, packages: &[PackageMetadata]) -> Vec<PathDependency> {
   source_manifest
@@ -350,7 +350,7 @@ fn path_dependencies_of(source_manifest: &dependencies::Manifest, packages: &[Pa
 /// Drops active feature names that the generated manifest does not define.
 #[allow(
   clippy::single_call_fn,
-  reason = "feature retention is a pure generated-manifest policy seam tested separately from prepare orchestration"
+  reason = "active feature retention intersects observed test-binary features with the generated manifest's declared feature vocabulary"
 )]
 fn retain_known_features(features: &mut Option<Vec<String>>, manifest: &Manifest) {
   if let Some(enabled_features) = features.as_mut() {
@@ -362,7 +362,7 @@ fn retain_known_features(features: &mut Option<Vec<String>>, manifest: &Manifest
 /// builds the project's dependencies once up front.
 #[allow(
   clippy::single_call_fn,
-  reason = "a named orchestration phase — writing the generated manifest and seeding dependencies — in compute's linear pipeline"
+  reason = "project materialization writes the generated crate and completes dependency preparation before case compilation begins"
 )]
 fn write(project: &mut Project) -> error::Result<()> {
   let manifest_toml = toml::to_string(&project.manifest).map_err(ProjectError::TomlSer)?;
@@ -381,7 +381,7 @@ fn write(project: &mut Project) -> error::Result<()> {
 /// workspace `[patch]`/`[replace]`, and registers one `[[bin]]` per test file.
 #[allow(
   clippy::single_call_fn,
-  reason = "a named project-synthesis phase building the generated manifest, lifted out of prepare to keep that phase readable"
+  reason = "manifest synthesis owns dependency merging, target registration, feature pruning, and workspace inheritance as one convergence phase"
 )]
 fn make_manifest(
   workspace: &Directory,
@@ -392,7 +392,7 @@ fn make_manifest(
   source_manifest: dependencies::Manifest,
 ) -> error::Result<Manifest> {
   let crate_name = source_manifest.package.name;
-  let workspace_manifest = dependencies::get_workspace_manifest(workspace);
+  let workspace_manifest = dependencies::try_get_workspace_manifest(workspace).unwrap_or_default();
 
   let edition = resolve_edition(source_manifest.package.edition, workspace_manifest.workspace.package.edition)?;
 
@@ -463,7 +463,7 @@ fn make_manifest(
 /// when the crate under test declares `edition.workspace = true`.
 #[allow(
   clippy::single_call_fn,
-  reason = "a named sub-step of `make_manifest`, isolating the edition-inheritance decision and its `NoWorkspaceManifest` error"
+  reason = "edition resolution defines the direct-versus-workspace inheritance state transition and its missing-workspace failure"
 )]
 fn resolve_edition(edition: EditionOrInherit, workspace_edition: Option<Edition>) -> error::Result<Edition> {
   match edition {
@@ -477,7 +477,7 @@ fn resolve_edition(edition: EditionOrInherit, workspace_edition: Option<Edition>
 /// target.
 #[allow(
   clippy::single_call_fn,
-  reason = "a named sub-step of `make_manifest`, keeping the dependency merge and the self path-dependency insertion in one scope"
+  reason = "dependency convergence merges normal and development dependencies and conditionally inserts the crate-under-test library edge"
 )]
 fn merge_dependencies(
   crate_name: &str,
@@ -509,8 +509,7 @@ fn merge_dependencies(
 /// exposes a library target.
 #[allow(
   clippy::single_call_fn,
-  reason = "a named sub-step of `make_manifest`, isolating the per-feature enable pruning so its nested retain stays within the nesting \
-            budget"
+  reason = "feature pruning retains only valid optional dependency enables and prefixes the crate-under-test feature edge when a library exists"
 )]
 fn prune_features(
   mut features: Map<String, Vec<String>>,
@@ -535,7 +534,7 @@ fn prune_features(
 /// dependencies or any `[target.*]` table.
 #[allow(
   clippy::single_call_fn,
-  reason = "a named predicate for `prune_features`, flattening the dependencies/targets optional-dep search out of the retain closure"
+  reason = "optional-dependency classification searches both top-level and target-specific Cargo dependency domains"
 )]
 fn is_optional_dependency(dep_name: &str, dependencies: &Map<String, Dependency>, targets: &Map<String, TargetDependencies>) -> bool {
   is_optional(dependencies.get(dep_name)) || targets.values().any(|target| is_optional(target.dependencies.get(dep_name)))
@@ -557,7 +556,7 @@ const fn is_optional(dependency: Option<&Dependency>) -> bool {
 /// output, collecting one [`CaseReport`] per case.
 #[allow(
   clippy::single_call_fn,
-  reason = "the batched fast-path phase, deliberately parallel to the per-test path that `compute` dispatches between"
+  reason = "batched evaluation attributes one keep-going Cargo result across every compile-fail case before applying per-case snapshot policy"
 )]
 fn run_all(
   project: &Project,
@@ -603,7 +602,7 @@ impl Test {
   /// producing its [`Outcome`] or the typed failure.
   #[allow(
     clippy::single_call_fn,
-    reason = "the per-test build+check step, called once from compute's per-test loop and kept on Test beside its check helpers"
+    reason = "single-case evaluation is the state transition from source registration through Cargo output attribution to typed outcome policy"
   )]
   fn evaluate(&self, project: &Project, name: &Name) -> error::Result<Outcome> {
     check_exists(&self.path)?;
@@ -640,7 +639,7 @@ impl Test {
   /// failing — carrying the run output either way.
   #[allow(
     clippy::single_call_fn,
-    reason = "the pass-test strategy paired with check_compile_fail behind the Expected dispatch"
+    reason = "pass-case interpretation requires successful compilation followed by successful executable completion with captured diagnostics"
   )]
   fn check_pass(
     project: &Project,
@@ -690,7 +689,7 @@ impl Test {
   /// reporting a missing/mismatched snapshot per the update mode.
   #[allow(
     clippy::single_call_fn,
-    reason = "a check strategy selected by function pointer in `check`, paired with check_pass behind the Expected dispatch"
+    reason = "compile-fail interpretation requires failed compilation followed by snapshot reconciliation under the selected update policy"
   )]
   fn check_compile_fail(
     &self,
@@ -749,8 +748,7 @@ impl Test {
 /// or creating it in place under [`Overwrite`](Update::Overwrite).
 #[allow(
   clippy::single_call_fn,
-  reason = "the missing-snapshot reconciliation lifted out of check_compile_fail so that function stays within the cognitive-complexity \
-            budget"
+  reason = "missing-snapshot reconciliation exhaustively maps Verify, Wip, and Overwrite modes onto typed failures or filesystem transitions"
 )]
 fn missing_snapshot(update: Update, stderr_path: PathBuf, preferred: &str) -> error::Result<Outcome> {
   match update {
@@ -812,7 +810,7 @@ fn check_exists(path: &Path) -> error::Result<()> {
 /// whose filename contains the filter string are run.
 #[allow(
   clippy::single_call_fn,
-  reason = "the command-line filter phase, named distinctly from glob expansion in compute's pipeline"
+  reason = "the command-line filter boundary isolates host argument observation from deterministic case-selection policy"
 )]
 fn filter(tests: &mut Vec<ExpandedTest>) {
   filter_with(tests, env::args_os());
@@ -821,12 +819,12 @@ fn filter(tests: &mut Vec<ExpandedTest>) {
 /// Restricts `tests` to those selected by `trybuild=<filter>` arguments.
 #[allow(
   clippy::single_call_fn,
-  reason = "argument filtering is tested through an injected argv iterator while filter owns the real process argv shell"
+  reason = "iterator-parameterized filtering defines deterministic trybuild argument selection independently of process arguments"
 )]
 fn filter_with(tests: &mut Vec<ExpandedTest>, args: impl Iterator<Item = OsString>) {
   let filters = TrybuildFilters::from_args(args);
 
-  if filters.is_empty() {
+  if filters.fragments.is_empty() {
     return;
   }
 
@@ -843,7 +841,7 @@ impl TrybuildFilters {
   /// Extracts non-empty `trybuild=<fragment>` filters from process arguments.
   #[allow(
     clippy::single_call_fn,
-    reason = "filter parsing is a named CLI policy step kept separate from applying the filters to expanded tests"
+    reason = "filter parsing owns the nonempty `trybuild=` argument grammar before path selection is applied"
   )]
   fn from_args(args: impl Iterator<Item = OsString>) -> Self {
     let fragments = args
@@ -856,15 +854,6 @@ impl TrybuildFilters {
     Self {
       fragments,
     }
-  }
-
-  /// Whether no case filter was provided.
-  #[allow(
-    clippy::single_call_fn,
-    reason = "the empty-filter predicate keeps filter_with's no-filter branch readable at the domain level"
-  )]
-  const fn is_empty(&self) -> bool {
-    self.fragments.is_empty()
   }
 
   /// Whether `path` matches at least one selected filter fragment.
@@ -902,31 +891,6 @@ mod tests {
       },
       error:        None,
       is_from_glob: false,
-    }
-  }
-
-  #[allow(
-    clippy::single_call_fn,
-    reason = "the helper centralizes generated-manifest defaults for the feature-retention polarity test"
-  )]
-  fn generated_manifest(features: &[&str]) -> Manifest {
-    let feature_map = features.iter().map(|feature| ((*feature).to_owned(), Vec::new())).collect();
-    Manifest {
-      cargo_features: Vec::new(),
-      package:        Package {
-        name:     "trybuild-tests".to_owned(),
-        version:  "0.0.0".to_owned(),
-        edition:  Edition::default(),
-        resolver: None,
-        publish:  false,
-      },
-      features:       feature_map,
-      dependencies:   Map::new(),
-      target:         Map::new(),
-      bins:           Vec::new(),
-      workspace:      None,
-      patch:          Map::new(),
-      replace:        Map::new(),
     }
   }
 
@@ -1044,7 +1008,28 @@ mod tests {
 
   #[test]
   fn retain_known_features_drops_unknown_active_features() -> StdResult<(), TestFailure> {
-    let manifest = generated_manifest(&["diff", "serde"]);
+    let manifest = Manifest {
+      cargo_features: Vec::new(),
+      package:        Package {
+        name:     "trybuild-tests".to_owned(),
+        version:  "0.0.0".to_owned(),
+        edition:  Edition::default(),
+        resolver: None,
+        publish:  false,
+      },
+      features:       [
+        ("diff".to_owned(), Vec::new()),
+        ("serde".to_owned(), Vec::new()),
+      ]
+      .into_iter()
+      .collect(),
+      dependencies:   Map::new(),
+      target:         Map::new(),
+      bins:           Vec::new(),
+      workspace:      None,
+      patch:          Map::new(),
+      replace:        Map::new(),
+    };
     let mut features = Some(vec!["diff".to_owned(), "unknown".to_owned(), "serde".to_owned()]);
 
     retain_known_features(&mut features, &manifest);

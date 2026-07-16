@@ -154,7 +154,7 @@ pub(in crate::internal) fn parse_cargo_json(
 /// target.
 #[allow(
   clippy::single_call_fn,
-  reason = "separates diagnostic parsing from artifact parsing so parse_cargo_json stays readable"
+  reason = "compiler-message attribution is a distinct Cargo JSON interpretation rule with target identity and diagnostic normalization"
 )]
 fn record_diagnostic(
   project: &Project,
@@ -193,7 +193,7 @@ fn record_diagnostic(
 /// registered test target.
 #[allow(
   clippy::single_call_fn,
-  reason = "separates artifact parsing from diagnostic parsing so parse_cargo_json stays readable"
+  reason = "compiler-artifact attribution is a distinct Cargo JSON interpretation rule that records executables only for registered targets"
 )]
 fn record_executable(
   path_map: &Map<CanonicalPath, (&Name, &Test)>,

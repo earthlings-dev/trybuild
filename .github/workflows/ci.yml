@@ -25,19 +25,21 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
-      # CI calls xtask directly: GitHub sets CI=true, which satisfies the
-      # `just`/CI invocation guard. `cargo xtask init` is the single source of
-      # truth for toolchains, components, targets, and every cargo tool
-      # (cargo-dupes + tokei included) — the workflow duplicates no tool list.
+      - name: Install the template workflow
+        run: cargo install --git https://github.com/earthlings-dev/template-rs.git --branch main --bin template template-cli
+
+      # The installed command remains the single source of truth for
+      # toolchains, components, targets, and every Cargo tool. The workflow
+      # duplicates no tool list.
       - name: Bootstrap toolchains, components, targets, and tools
-        run: cargo xtask init
+        run: template init
 
       # Scope -Dwarnings to the gate so it does not apply while `init` compiles
       # third-party tools from source.
-      - name: cargo xtask ci
+      - name: template ci
         env:
           RUSTFLAGS: "-Dwarnings"
-        run: cargo xtask ci
+        run: template ci
 
   # Non-Linux legs validate the platform-dependent surface: check + the full
   # test suite everywhere, and clippy on Windows only — the workspace carries
@@ -59,24 +61,27 @@ jobs:
       # rust-cache keys per-OS automatically, so each leg warms its own cache.
       - uses: Swatinem/rust-cache@v2
 
-      - name: Bootstrap toolchains, components, targets, and tools
-        run: cargo xtask init
+      - name: Install the template workflow
+        run: cargo install --git https://github.com/earthlings-dev/template-rs.git --branch main --bin template template-cli
 
-      - name: cargo xtask check
+      - name: Bootstrap toolchains, components, targets, and tools
+        run: template init
+
+      - name: template check
         env:
           RUSTFLAGS: "-Dwarnings"
-        run: cargo xtask check
+        run: template check
 
-      - name: cargo xtask lint (windows-only cfg surface)
+      - name: template lint (windows-only cfg surface)
         if: runner.os == 'Windows'
         env:
           RUSTFLAGS: "-Dwarnings"
-        run: cargo xtask lint
+        run: template lint
 
-      - name: cargo xtask test-all
+      - name: template test-all
         env:
           RUSTFLAGS: "-Dwarnings"
-        run: cargo xtask test-all
+        run: template test-all
 
   # Continuously validates the zig-linked cross-compilation pattern: every
   # default target builds from Linux, and the Windows artifact is handed to
@@ -90,15 +95,18 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
-      # zig is the one cross tool `cargo xtask init` cannot install (it is not
+      # zig is the one cross tool `template init` cannot install (it is not
       # a cargo package); the maintained setup action provides it.
       - uses: mlugg/setup-zig@v2
 
-      - name: Bootstrap toolchains, components, targets, and tools
-        run: cargo xtask init
+      - name: Install the template workflow
+        run: cargo install --git https://github.com/earthlings-dev/template-rs.git --branch main --bin template template-cli
 
-      - name: cargo xtask cross
-        run: cargo xtask cross
+      - name: Bootstrap toolchains, components, targets, and tools
+        run: template init
+
+      - name: template cross
+        run: template cross
 
       - uses: actions/upload-artifact@v7
         with:

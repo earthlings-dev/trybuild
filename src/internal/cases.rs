@@ -27,8 +27,7 @@ impl TestCases {
   /// Creates an empty set of test cases.
   #[allow(
     clippy::single_call_fn,
-    reason = "the public TestCases constructor — one of the crate's three-function API — invoked by users, not just by the local Default \
-              impl"
+    reason = "TestCases construction establishes the empty-registration state from which the compile-diagnostic builder contract begins"
   )]
   pub const fn new() -> Self {
     Self {

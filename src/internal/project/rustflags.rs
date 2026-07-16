@@ -1,32 +1,19 @@
 //! Assembling the rustflags passed to the test crates: trybuild's own cfgs,
 //! ignored lints, and any coverage flags forwarded from the environment.
 
-use std::env;
 use std::ffi::OsString;
+
+use toml::Value;
 
 /// Lints silenced in the test crates, where warnings would be noise.
 const IGNORED_LINTS: &[&str] = &["dead_code"];
-
-/// Builds the rustflags array for the generated project as a TOML value.
-///
-/// Always passes `--cfg trybuild --verbose`, allows [`IGNORED_LINTS`], forwards
-/// `-C instrument-coverage` from `RUSTFLAGS` when present, and appends
-/// `extra_rustflags`.
-#[allow(
-  clippy::single_call_fn,
-  reason = "the rustflags assembly is a named, documented construction step kept separate from the cargo-command builders in \
-            `build::cargo` that consume it"
-)]
-pub(in crate::internal) fn toml(extra_rustflags: &[&'static str]) -> toml::Value {
-  toml_from(env::var_os("RUSTFLAGS"), extra_rustflags)
-}
 
 /// Builds the rustflags TOML value from an injected `RUSTFLAGS` value.
 #[allow(
   clippy::single_call_fn,
   reason = "the injectable rustflags builder separates pure flag policy from the environment-reading entry point"
 )]
-pub(in crate::internal) fn toml_from(rustflags_env: Option<OsString>, extra_rustflags: &[&'static str]) -> toml::Value {
+pub(in crate::internal) fn toml_from(rustflags_env: Option<OsString>, extra_rustflags: &[&'static str]) -> Value {
   let mut rustflags = vec!["--cfg", "trybuild", "--verbose"];
 
   for &lint in IGNORED_LINTS {
@@ -35,8 +22,9 @@ pub(in crate::internal) fn toml_from(rustflags_env: Option<OsString>, extra_rust
   }
 
   if let Some(flags) = rustflags_env {
-    // TODO: could parse this properly and allowlist or blocklist certain
-    // flags. This is good enough to at least support cargo-llvm-cov.
+    // Trybuild deliberately forwards only the coverage instrumentation flag it
+    // understands; unrelated host compilation policy must not leak into the
+    // generated diagnostic project.
     if flags.to_string_lossy().contains("-C instrument-coverage") {
       rustflags.extend(["-C", "instrument-coverage"]);
     }
@@ -44,7 +32,7 @@ pub(in crate::internal) fn toml_from(rustflags_env: Option<OsString>, extra_rust
 
   rustflags.extend(extra_rustflags);
 
-  toml::Value::Array(rustflags.into_iter().map(|flag| toml::Value::String(flag.to_owned())).collect())
+  Value::Array(rustflags.into_iter().map(|flag| Value::String(flag.to_owned())).collect())
 }
 
 #[cfg(test)]
@@ -58,15 +46,15 @@ mod tests {
 
   use super::*;
 
-  fn flags(value: &toml::Value) -> StdResult<Vec<&str>, TestFailure> {
-    let array = ensure_some(value.as_array(), "rustflags TOML is an array")?;
-    Ok(array.iter().filter_map(toml::Value::as_str).collect())
+  fn flags(rustflags_toml: &Value) -> StdResult<Vec<&str>, TestFailure> {
+    let array = ensure_some(rustflags_toml.as_array(), "rustflags TOML is an array")?;
+    Ok(array.iter().filter_map(Value::as_str).collect())
   }
 
   #[test]
   fn toml_from_builds_default_and_extra_flags() -> StdResult<(), TestFailure> {
-    let value = toml_from(None, &["--diagnostic-width=140"]);
-    let flags = flags(&value)?;
+    let rustflags_toml = toml_from(None, &["--diagnostic-width=140"]);
+    let flags = flags(&rustflags_toml)?;
 
     ensure_all(&[
       (flags.contains(&"--cfg"), "default rustflags include the cfg flag"),
@@ -83,8 +71,8 @@ mod tests {
 
   #[test]
   fn toml_from_forwards_coverage_instrumentation() -> StdResult<(), TestFailure> {
-    let value = toml_from(Some(OsString::from("-C instrument-coverage")), &[]);
-    let flags = flags(&value)?;
+    let rustflags_toml = toml_from(Some(OsString::from("-C instrument-coverage")), &[]);
+    let flags = flags(&rustflags_toml)?;
 
     ensure_all(&[
       (flags.contains(&"-C"), "coverage forwarding includes the -C option"),

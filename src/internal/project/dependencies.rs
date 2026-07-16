@@ -32,7 +32,7 @@ use crate::internal::sys::directory::Directory;
 /// dependencies to absolute paths and dropping the `trybuild` self-dependency.
 #[allow(
   clippy::single_call_fn,
-  reason = "the crate-under-test manifest reader on this module's surface to the runner, a named project-synthesis step"
+  reason = "crate-manifest decoding is the project-synthesis boundary that removes self-edges and absolutizes every dependency path domain"
 )]
 pub(in crate::internal) fn get_manifest(manifest_dir: &Directory) -> ProjectResult<Manifest> {
   let cargo_toml_path = manifest_dir.join("Cargo.toml");
@@ -53,23 +53,8 @@ pub(in crate::internal) fn get_manifest(manifest_dir: &Directory) -> ProjectResu
   Ok(manifest)
 }
 
-/// Reads the workspace manifest, returning an empty default if it cannot be
-/// read (for instance when there is no enclosing workspace).
-#[allow(
-  clippy::single_call_fn,
-  reason = "the infallible workspace-manifest reader on this module's surface, wrapping the fallible try_ variant with unwrap_or_default"
-)]
-pub(in crate::internal) fn get_workspace_manifest(manifest_dir: &Directory) -> WorkspaceManifest {
-  try_get_workspace_manifest(manifest_dir).unwrap_or_default()
-}
-
 /// Reads the workspace's `[workspace]`, `[patch]`, and `[replace]` sections,
 /// rewriting their relative paths to absolute and dropping any `trybuild` entry.
-#[allow(
-  clippy::single_call_fn,
-  reason = "the fallible workspace-manifest reader, named to pair with get_workspace_manifest's unwrap_or_default and isolate the \
-            `?`-laden body"
-)]
 pub(in crate::internal) fn try_get_workspace_manifest(manifest_dir: &Directory) -> error::Result<WorkspaceManifest> {
   let cargo_toml_path = manifest_dir.join("Cargo.toml");
   let manifest_str = fs::read_to_string(cargo_toml_path).map_err(SysError::Io)?;
@@ -95,8 +80,7 @@ fn fix_dependencies(dependencies: &mut Map<String, Dependency>, dir: &Directory)
 /// to be absolute against `dir`.
 #[allow(
   clippy::single_call_fn,
-  reason = "a documented path-rewriting helper kept symmetric with fix_dependencies and fix_replacements so the three \
-            `[patch]`/`[replace]`/dep fixups read alike"
+  reason = "registry-patch rewriting applies trybuild removal and absolute-path resolution across the nested registry table shape"
 )]
 fn fix_patches(patches: &mut Map<String, RegistryPatch>, dir: &Directory) {
   for registry in patches.values_mut() {
@@ -111,8 +95,7 @@ fn fix_patches(patches: &mut Map<String, RegistryPatch>, dir: &Directory) {
 /// relative path to be absolute against `dir`.
 #[allow(
   clippy::single_call_fn,
-  reason = "a documented path-rewriting helper kept symmetric with fix_dependencies and fix_patches so the three \
-            `[patch]`/`[replace]`/dep fixups read alike"
+  reason = "replacement rewriting applies trybuild removal and absolute-path resolution across Cargo's replacement table shape"
 )]
 fn fix_replacements(replacements: &mut Map<String, Patch>, dir: &Directory) {
   let _removed = replacements.remove("trybuild");
@@ -628,21 +611,6 @@ trybuild = { path = "replacement-self" }
         "replacement paths are rewritten",
       ),
       (!manifest.replace.contains_key("trybuild"), "trybuild replacements are dropped"),
-    ])
-  }
-
-  #[test]
-  fn missing_workspace_manifest_defaults_to_empty() -> Result<(), TestFailure> {
-    let fixture = TempDir::new("workspace-missing")?;
-    let manifest = get_workspace_manifest(&Directory::new(fixture.child("missing")));
-
-    ensure_all(&[
-      (
-        manifest.workspace.dependencies.is_empty(),
-        "missing workspace manifests have no inherited dependencies",
-      ),
-      (manifest.patch.is_empty(), "missing workspace manifests have no patches"),
-      (manifest.replace.is_empty(), "missing workspace manifests have no replacements"),
     ])
   }
 

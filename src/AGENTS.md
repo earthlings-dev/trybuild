@@ -4,18 +4,18 @@ Scope: `src/` — the trybuild library. The repo-root `AGENTS.md` owns the comma
 
 ## Layout
 
-`src/lib.rs` is a thin router: rustdoc for the three-function public API, the curated crate-level clippy allow-list, and re-exports from the private `mod internal`. Everything else lives under `src/internal/` (`src/internal.rs` declares the tree), split by domain — each module's `//!` header is its authoritative description:
+`src/lib.rs` is a thin router: rustdoc for the three-function public API and re-exports from the private `mod internal`. Everything else lives under `src/internal/` (`src/internal.rs` declares the tree), split by domain — each module's `//!` header is its authoritative description:
 
 - `cases.rs` — the public `TestCases` builder users construct, register `pass`/`compile_fail` globs on, and finally `run` (terminal, `TRYBUILD`-env-driven) or `try_run` (typed, terminal-free). Execution is explicit; there is no `Drop`-driven run.
 - `runner.rs` + `runner/` — the core `compute` pipeline; `runner/expand.rs` expands globs into uniquely-named `trybuildNNN` bin targets. `filter()` here implements the `trybuild=<file.rs>` argv filter.
 - `project.rs` + `project/` — synthesizes the throwaway Cargo project: `dependencies.rs` reads the crate-under-test's manifest, `inherit.rs` resolves workspace inheritance / `[patch]` / `[replace]`, `manifest.rs` generates the project's `Cargo.toml`.
-- `build.rs` + `build/` — runs `cargo build`/`check --message-format=json` (`cargo.rs`) and parses the streamed JSON into per-source diagnostics (`json.rs`).
+- `build.rs` + `build/` — plans Cargo invocations as `strict_standard::ProcessRequest` values, executes them through an injected `ProcessExecutor` (`cargo.rs`), and parses captured JSON into per-source diagnostics (`json.rs`). Cargo syntax, trybuild target selection, status interpretation, and diagnostic decoding remain trybuild policy.
 - `diagnostics.rs` + `diagnostics/` — normalization (`normalize.rs`) and comparison against `.stderr` snapshots; also declares the snapshot test modules (see below).
 - `outcome.rs` / `report/` — `compute` returns a typed `Report` of `CaseReport`s carrying outcomes and diffs as data; `report/message.rs` (over the `Reporter` in `report/reporter.rs`) is the render view that `run` streams through.
 - `error.rs` — the typed `TryBuildError`; per-domain enums (`SysError`/`ProjectError`/`BuildError`/`DiagnosticsError`/`RunnerError`) live in their domain modules.
 - `model.rs` — shared value types threaded across the domains (e.g. `PathDependency`).
 - `path.rs` — the `path!` macro for assembling `PathBuf`/`Directory` values and the `CanonicalPath` grouping key.
-- `sys/` — OS/process seams: `env.rs` parses `TRYBUILD` into the snapshot-reconciliation `Update` mode, `flock.rs` serializes concurrent runs sharing the generated project, `directory.rs` owns the `Directory` newtype.
+- `sys/` — trybuild-specific host and filesystem seams: `env.rs` parses `TRYBUILD` into the snapshot-reconciliation `Update` mode, `flock.rs` serializes concurrent runs sharing the generated project, and `directory.rs` owns the `Directory` newtype. Generic process execution belongs to `strict-standard`, not this tree.
 
 ## The append-only normalization rule (most important)
 
@@ -31,4 +31,4 @@ Each `src/tests/<name>.rs` is one normalizer snapshot case, expanded by the name
 
 ## Lint posture
 
-CI runs `cargo clippy --tests -- -Dclippy::all -Dclippy::pedantic`. Silencing a new pedantic lint usually means extending the curated crate-level allow-list in `src/lib.rs` with a justification, not adding an inline `#[allow]`.
+CI runs `cargo clippy --tests -- -Dclippy::all -Dclippy::pedantic`. Fix lint findings structurally. The only permitted lint attribute is a function- or method-local `#[allow(clippy::single_call_fn, reason = "...")]` whose nonblank reason names the preserved API, parser, policy, state-machine, security, or function-item boundary; crate-, module-, or blanket-level allowances and every `#[expect]` are forbidden.

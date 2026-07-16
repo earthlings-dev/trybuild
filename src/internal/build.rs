@@ -7,15 +7,16 @@
 pub(in crate::internal) mod cargo;
 pub(in crate::internal) mod json;
 
-use std::io;
 use std::result::Result as StdResult;
+
+use strict_standard::ProcessError;
 
 /// Errors arising while invoking cargo or reading its output.
 #[derive(thiserror::Error, Debug)]
 pub enum BuildError {
   /// Failed to spawn or execute the `cargo` process.
   #[error("failed to execute cargo: {0}")]
-  Cargo(#[source] io::Error),
+  Cargo(#[source] ProcessError),
   /// The one-time dependency build of the generated project failed; carries
   /// the build's captured output.
   #[error("cargo failed to build the generated project's dependencies")]

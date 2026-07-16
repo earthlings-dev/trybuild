@@ -123,8 +123,7 @@ normalizations! {
 /// file is absent or not a match.
 #[allow(
   clippy::single_call_fn,
-  reason = "the module's public normalizer entry point — also the fuzz target's and the unit tests' entry — so its call count varies by \
-            build and an #[expect] would be unfulfilled under cfg(test)"
+  reason = "diagnostic normalization is the module boundary that derives every backward-compatible snapshot variation from raw rustc text"
 )]
 pub(in crate::internal) fn diagnostics(output: &str, context: &Context<'_>) -> Variations {
   let normalized_input = output.replace("\r\n", "\n");
@@ -197,8 +196,7 @@ pub(in crate::internal) fn trim<S: AsRef<[u8]>>(output: S) -> String {
 /// unindents and trims the result.
 #[allow(
   clippy::single_call_fn,
-  reason = "a named per-step normalization stage, separated from the variation-set driver in `diagnostics` that maps it over every \
-            Normalization"
+  reason = "one normalization stage applies a versioned rule set, block unindentation, and final stream trimming as an atomic snapshot transform"
 )]
 fn apply(original: &str, normalization: Normalization, context: &Context<'_>) -> String {
   let mut normalized = String::new();
@@ -282,8 +280,7 @@ impl Filter<'_> {
   /// line numbers of locations that point outside the input file.
   #[allow(
     clippy::single_call_fn,
-    reason = "the location-line normalizer, lifted out of `apply` as one named phase so the `--> ` rewrite ladder reads as a sequence of \
-              guarded steps within the nesting budget"
+    reason = "location normalization owns the ordered path-domain rewrites and external-source line-number stabilization rules"
   )]
   fn normalize_location(&mut self, index: usize, mut line: String, indent: usize) -> String {
     line = line.replace('\\', "/");
@@ -335,8 +332,7 @@ impl Filter<'_> {
   /// to be treated as belonging to another crate.
   #[allow(
     clippy::single_call_fn,
-    reason = "a named branch of `normalize_location`, isolating the source-dir vs input-file decision and its early-emit cases from the \
-              surrounding ladder"
+    reason = "source-directory rewriting preserves input-file line numbers while classifying every other local source as external"
   )]
   fn replace_source_dir(&self, line: &mut String, line_lower: &str, indent: usize, i: usize, source_dir_pat: &str) -> bool {
     if self.normalization >= RelativeToDir && i == indent.saturating_add(4) {
@@ -365,7 +361,7 @@ impl Filter<'_> {
   /// whether a rewrite occurred.
   #[allow(
     clippy::single_call_fn,
-    reason = "a named branch of `normalize_location`, keeping the path-dependency scan and its name-uppercasing out of the main ladder"
+    reason = "path-dependency rewriting maps canonical dependency roots onto stable uppercase snapshot variables"
   )]
   fn replace_path_dependency(&self, line: &mut String, line_lower: &str) -> bool {
     for path_dep in self.context.path_dependencies {
@@ -384,7 +380,7 @@ impl Filter<'_> {
   /// occurred.
   #[allow(
     clippy::single_call_fn,
-    reason = "a named branch of `normalize_location`, isolating the registry hash/version index arithmetic from the surrounding ladder"
+    reason = "Cargo registry rewriting validates the registry hash shape before substituting stable root and optional version markers"
   )]
   fn replace_cargo_registry(&self, line: &mut String, indent: usize) -> bool {
     let Some(pos) = line
@@ -416,7 +412,7 @@ impl Filter<'_> {
   /// along with it.
   #[allow(
     clippy::single_call_fn,
-    reason = "a named helper for the WorkspaceLines lookahead, keeping the bordered-row scan out of `normalize_location`"
+    reason = "external-source line stabilization extends number hiding across the complete bordered diagnostic block"
   )]
   fn extend_hidden_numbers(&mut self, index: usize) {
     while let Some(next_line) = self.all_lines.get(index.saturating_add(self.hide_numbers)) {
@@ -435,7 +431,7 @@ impl Filter<'_> {
   /// is dropped from the snapshot.
   #[allow(
     clippy::single_call_fn,
-    reason = "the non-location half of `apply`, lifted out so the line-dropping guard clauses read as one sequence and keep `apply` short"
+    reason = "non-location filtering owns rustc boilerplate removal, list compaction, and stable crate/workspace substitutions"
   )]
   fn strip_line(&mut self, index: usize, mut line: String) -> Option<String> {
     let trim_start = line.trim_start();
@@ -513,8 +509,7 @@ impl Filter<'_> {
   /// [`other_types`](Self::other_types). Returns whether this line is dropped.
   #[allow(
     clippy::single_call_fn,
-    reason = "a named branch of `strip_line`, isolating the verbose-list counter state machine and its lookahead from the guard-clause \
-              sequence"
+    reason = "verbose trait-implementation lists use a stateful nine-entry cap with a deterministic `$N` continuation marker"
   )]
   fn collapse_other_types(&mut self, index: usize, line: &mut String, indent: usize) -> Collapse {
     let trim_start = line.trim_start();
@@ -572,8 +567,7 @@ fn lower_slash(text: &str) -> String {
 /// at `indent + 4`; this scans the trailing components for `<crate>-<hash>/out`.
 #[allow(
   clippy::single_call_fn,
-  reason = "a named branch of `normalize_location`, lifted out so the OUT_DIR component scan reads as one step and stays within the \
-            nesting budget"
+  reason = "OUT_DIR rewriting scans Cargo target components and replaces only validated crate-hash `out` paths"
 )]
 fn replace_out_dir(line: &mut String, indent: usize, target_dir_pat: &str) -> bool {
   let mut offset = indent.saturating_add(4).saturating_add(target_dir_pat.len());
@@ -601,8 +595,7 @@ fn replace_out_dir(line: &mut String, indent: usize, target_dir_pat: &str) -> bo
 /// `-`, then a 16-character lowercase hex disambiguator.
 #[allow(
   clippy::single_call_fn,
-  reason = "a named predicate for the <crate>-<16-hex> OUT_DIR directory shape, lifted out of replace_out_dir's component-scan loop so \
-            that loop reads as one step"
+  reason = "OUT_DIR crate classification defines the exact `<crate>-<16-lower-hex>` component grammar"
 )]
 fn is_out_dir_crate(component: &str) -> bool {
   component.len() > 17
@@ -616,7 +609,7 @@ fn is_out_dir_crate(component: &str) -> bool {
 /// whether a rewrite occurred.
 #[allow(
   clippy::single_call_fn,
-  reason = "a named branch of `normalize_location`, lifted out so the three `$RUST` path shapes read as one decision with a final else"
+  reason = "standard-library rewriting exhaustively recognizes historical rust-src, current rust-src, and rustc-hash path layouts"
 )]
 fn replace_rust_lib(line: &mut String, indent: usize) -> bool {
   if let Some(pos) = line.find("/rustlib/src/rust/src/") {
@@ -643,8 +636,7 @@ fn replace_rust_lib(line: &mut String, indent: usize) -> bool {
 /// `indent + 4`.
 #[allow(
   clippy::single_call_fn,
-  reason = "a named predicate for the /rustc/<40-hex>/library/ standard-library path shape, keeping replace_rust_lib's three-branch $RUST \
-            ladder readable"
+  reason = "rustc-source classification validates the exact `/rustc/<40-lower-hex>/library/` path grammar"
 )]
 fn is_rustc_hash_library(line: &str, indent: usize) -> bool {
   line.get(indent.saturating_add(4)..).unwrap_or("").starts_with("/rustc/")
@@ -657,7 +649,7 @@ fn is_rustc_hash_library(line: &str, indent: usize) -> bool {
 /// Rewrites the version in a `$CARGO/<crate>-<version>/…` path to `$VERSION`.
 #[allow(
   clippy::single_call_fn,
-  reason = "a named sub-step of `replace_cargo_registry`, isolating the crate-name/version boundary arithmetic from the `$CARGO` rewrite"
+  reason = "dependency-version rewriting locates the crate-name boundary before replacing only the registry version segment"
 )]
 fn replace_dependency_version(line: &mut String, indent: usize) {
   let rest = line.get(indent.saturating_add(11)..).unwrap_or("");
@@ -674,7 +666,7 @@ fn replace_dependency_version(line: &mut String, indent: usize) {
 /// Collapses a trailing `and <N> others` count to `and $N others`.
 #[allow(
   clippy::single_call_fn,
-  reason = "a named step of `strip_line`, keeping the `and N others` digit-span check in its own scope"
+  reason = "implementation-count normalization replaces only the exact `and <digits> others` rustc grammar"
 )]
 fn normalize_and_others(line: &mut String) {
   let trim_start = line.trim_start();
@@ -699,8 +691,7 @@ fn normalize_and_others(line: &mut String) {
 /// which is dropped from snapshots.
 #[allow(
   clippy::single_call_fn,
-  reason = "a named predicate matching rustc's 'full type name has been written to' note that StripLongTypeNameFiles drops, kept out of \
-            strip_line's guard-clause sequence"
+  reason = "long-type-note classification captures both rustc phrasings whose generated file paths are intentionally unstable"
 )]
 fn is_long_type_name_note(line: &str) -> bool {
   let trimmed = line.trim_start();
@@ -718,7 +709,7 @@ fn is_ascii_lowercase_hex(text: &str) -> bool {
 /// `"   | T: Send,"`.
 #[allow(
   clippy::single_call_fn,
-  reason = "a named line-mutation helper documenting the leading-number-blanking transform, kept out of the dense per-line filter body"
+  reason = "leading-number hiding preserves diagnostic column alignment while removing unstable external-source line numbers"
 )]
 fn hide_leading_numbers(line: &mut String) {
   let n = line
@@ -734,7 +725,7 @@ fn hide_leading_numbers(line: &mut String) {
 /// `"main.rs:22:29"` becomes `"main.rs"`.
 #[allow(
   clippy::single_call_fn,
-  reason = "a named line-mutation helper documenting the trailing-number-stripping transform, kept out of the dense per-line filter body"
+  reason = "trailing-number hiding removes at most the line and column suffixes from normalized source locations"
 )]
 fn hide_trailing_numbers(line: &mut String) {
   for _ in 0..2 {
@@ -814,7 +805,7 @@ enum IndentedLineKind {
 /// do not depend on the width of rustc's right-aligned line-number column.
 #[allow(
   clippy::single_call_fn,
-  reason = "a named, documented normalization pass kept distinct from the per-line filter, run once as the final stage of `apply`"
+  reason = "block unindentation removes rustc line-number-width variance after semantic line filtering has completed"
 )]
 fn unindent(diag: String, normalization: Normalization) -> String {
   if normalization < Unindent {
@@ -854,8 +845,7 @@ fn unindent(diag: String, normalization: Normalization) -> String {
 /// heading) and the least cuttable indentation across them.
 #[allow(
   clippy::single_call_fn,
-  reason = "a named phase of `unindent`, giving the block-measuring loop its own scope so its `line`/`indent` bindings don't shadow the \
-            outer pass"
+  reason = "unindent measurement classifies one complete diagnostic block and derives its minimum safe indentation cut"
 )]
 fn measure_unindent_block(first_indent: usize, ahead: Lines<'_>, normalization: Normalization) -> (usize, usize) {
   let mut lines_in_block: usize = 1;
@@ -885,7 +875,7 @@ fn measure_unindent_block(first_indent: usize, ahead: Lines<'_>, normalization: 
 /// after the border on each bordered row so snapshots stay column-stable.
 #[allow(
   clippy::single_call_fn,
-  reason = "a named phase of `unindent`, giving the block-emitting loop its own scope so its `line` binding doesn't shadow the outer pass"
+  reason = "unindent emission applies one measured cut while preserving headings and note-continuation rows unchanged"
 )]
 fn emit_unindent_block(
   normalized: &mut String,

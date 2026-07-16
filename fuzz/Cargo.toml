@@ -101,7 +101,7 @@ missing_copy_implementations            = "warn"
 # ─────────────────────────────────────────────────────────────────────────────
 # NOTE: rustdoc lints fire during a DOC BUILD (`cargo doc` / `cargo xdoc`), not
 # during `cargo check` / `clippy` / `test`. The `ci` pipeline runs a doc build
-# (the `doc` phase in `cmd::ci`, reached via `cargo xtask ci`), so these deny
+# (the `doc` phase in the installed `template ci` workflow), so these deny
 # levels are a hard CI gate as well as gating `cargo doc` locally and on docs.rs.
 # ═════════════════════════════════════════════════════════════════════════════
 
@@ -377,7 +377,7 @@ missing_docs_in_private_items            = "deny"
 
 # Meta: localized `#[allow(clippy::single_call_fn, reason = "...")]` is
 # permitted where a named helper genuinely improves structure. The companion
-# `lint-attrs` xtask still rejects every other `#[allow(...)]` / `#[expect(...)]`.
+# `template lint-attrs` still rejects every other `#[allow(...)]` / `#[expect(...)]`.
 allow_attributes                         = "allow"
 allow_attributes_without_reason          = "deny"
 

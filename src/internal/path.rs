@@ -40,7 +40,7 @@ macro_rules! tokenize_path {
     };
 
     ([$(($($component:tt)+))*]) => {{
-        let mut path = std::path::PathBuf::new();
+        let mut path = PathBuf::new();
         $(
             path.push(&($($component)+));
         )*

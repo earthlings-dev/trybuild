@@ -57,8 +57,7 @@ impl Lock {
   /// Acquires both lock layers.
   #[allow(
     clippy::single_call_fn,
-    reason = "the composite lock constructor coordinating both layers, the type's entry point to the two-layer locking abstraction this \
-              module documents"
+    reason = "lock acquisition atomically combines the process-local mutex with the cross-process lockfile lifetime"
   )]
   pub(in crate::internal) fn acquire(path: impl AsRef<Path>) -> Result<Self> {
     let intraprocess_guard = LOCK.lock();
@@ -74,7 +73,7 @@ impl FileLock {
   /// falling back to [`FileLock::NotLocked`] if a lockfile cannot be created.
   #[allow(
     clippy::single_call_fn,
-    reason = "the cross-process-layer constructor, named to mirror Guard::acquire and own the lockfile creation plus poll-thread spawn"
+    reason = "file-lock acquisition owns lockfile creation, degraded no-lock behavior, and the detached freshness worker lifecycle"
   )]
   fn acquire(path: impl AsRef<Path>) -> Result<Self> {
     let owned_path = path.as_ref().to_owned();
@@ -126,7 +125,7 @@ impl Drop for FileLock {
 /// Returns `None` if file-based locking is unavailable.
 #[allow(
   clippy::single_call_fn,
-  reason = "a documented helper encapsulating the stale/future lockfile-busting loop, kept out of FileLock::acquire's happy path"
+  reason = "lockfile creation enforces the stale-or-future timestamp recovery loop and bounded retry cadence"
 )]
 fn create(path: &Path) -> Option<File> {
   loop {
@@ -173,7 +172,7 @@ fn create(path: &Path) -> Option<File> {
 /// processes can tell the lock is still held, until `done` is set.
 #[allow(
   clippy::single_call_fn,
-  reason = "the background mtime-refresh thread body, named for the spawn site in FileLock::acquire rather than inlined into the closure"
+  reason = "the freshness worker maintains lockfile modification time until release or filesystem failure"
 )]
 fn poll(lockfile: &File, done: &AtomicBool) {
   loop {

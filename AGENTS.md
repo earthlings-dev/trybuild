@@ -129,7 +129,6 @@ Common things that fail to compile here but compile elsewhere:
 
 - Use typed errors via `thiserror`.
 - Wrapping third-party errors is fine when the dependency's own error is a real typed error. Reusable crates should keep their own error enums; local `xtask` code should map those errors at the adapter boundary so command behavior and diagnostics stay stable.
-
 - `trybuild` exists to provide typed, terminal-free compiler diagnostics, not to bless compile-failing source as ordinary repository content. Treat each checked-in failing `.rs` fixture as a narrow full-compiler integration sample whose invalidity is the behavior under test; do not add or preserve incidental non-idiomatic Rust just because the fixture is expected to fail.
 - When a diagnostic case can be exercised by parser/token/IR tests, normalization snapshots, generated temporary crates, or a more focused unit test, prefer that narrower boundary over a permanent compile-failing source file. If a `.rs` fixture remains, keep all unrelated syntax idiomatic so the fixture has one reason to fail.
 

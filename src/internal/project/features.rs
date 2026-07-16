@@ -21,8 +21,7 @@ use serde_derive::Deserialize;
 /// be determined.
 #[allow(
   clippy::single_call_fn,
-  reason = "the infallible feature-detection entry point on this module's surface, wrapping the best-effort try_find and collapsing its \
-            error to None"
+  reason = "feature discovery is the best-effort host boundary that intentionally collapses fingerprint-layout failures to absence"
 )]
 pub(in crate::internal) fn find() -> Option<Vec<String>> {
   env::args_os().next().and_then(|test_binary| find_from(&test_binary).ok())
@@ -55,8 +54,7 @@ struct Build {
 /// Returns [`Ignored`] at the first sign the layout does not match expectations.
 #[allow(
   clippy::single_call_fn,
-  reason = "the fallible detection routine, named and split from find so the `?`-on-Ignored body stays separate from the lossy None \
-            fallback"
+  reason = "fingerprint decoding is the fallible Cargo-layout interpreter beneath the best-effort feature-discovery boundary"
 )]
 fn find_from(test_binary: &OsStr) -> Result<Vec<String>, Ignored> {
   // This will look something like:
@@ -121,7 +119,7 @@ fn find_from(test_binary: &OsStr) -> Result<Vec<String>, Ignored> {
 /// Whether `byte` is an ASCII lowercase hexadecimal digit.
 #[allow(
   clippy::single_call_fn,
-  reason = "a named predicate passed by reference to Iterator::all, clearer at the call site than an inline closure"
+  reason = "the lowercase-hex predicate is the function-item grammar used to validate Cargo fingerprint hashes"
 )]
 const fn is_lower_hex_digit(byte: u8) -> bool {
   matches!(byte, b'0'..=b'9' | b'a'..=b'f')

@@ -8,8 +8,8 @@
 mod tests {
   use std::fs;
   use std::path::Path;
-  use std::process::Command;
 
+  use strict_standard::EnvironmentChange;
   use strict_test_support::Expect;
   use strict_test_support::TempDir;
   use strict_test_support::TestFailure;
@@ -48,11 +48,18 @@ mod tests {
     write_foreign_crate(lock_crate.path(), "trybuild-foreign-lock", "pub fn value() -> u8 { 1 }\n")?;
     let lock_target = lock_crate.child("target-root");
     let generated_lockfile = lock_target.join("tests/trybuild/trybuild-foreign-lock/Cargo.lock");
-    let lockfile_child = capture_ignored_test_with("tests::lockfile_generation_child", |command| {
-      let _: &mut Command = command
-        .current_dir(lock_crate.path())
-        .env("CARGO_MANIFEST_DIR", lock_crate.path())
-        .env("CARGO_TARGET_DIR", &lock_target);
+    let lockfile_child = capture_ignored_test_with("tests::lockfile_generation_child", |request| {
+      request.current_dir = Some(lock_crate.path().to_path_buf());
+      request.environment.extend([
+        EnvironmentChange::Set {
+          name:  "CARGO_MANIFEST_DIR".into(),
+          value: lock_crate.path().as_os_str().to_os_string(),
+        },
+        EnvironmentChange::Set {
+          name:  "CARGO_TARGET_DIR".into(),
+          value: lock_target.as_os_str().to_os_string(),
+        },
+      ]);
     })?;
 
     let broken_crate = TempDir::new("foreign-broken")?;
@@ -62,11 +69,18 @@ mod tests {
       "pub fn broken() { let _: u8 = \"no\"; }\n",
     )?;
     let broken_target = broken_crate.child("target-root");
-    let dependency_child = capture_ignored_test_with("tests::dependency_build_failure_child", |command| {
-      let _: &mut Command = command
-        .current_dir(broken_crate.path())
-        .env("CARGO_MANIFEST_DIR", broken_crate.path())
-        .env("CARGO_TARGET_DIR", &broken_target);
+    let dependency_child = capture_ignored_test_with("tests::dependency_build_failure_child", |request| {
+      request.current_dir = Some(broken_crate.path().to_path_buf());
+      request.environment.extend([
+        EnvironmentChange::Set {
+          name:  "CARGO_MANIFEST_DIR".into(),
+          value: broken_crate.path().as_os_str().to_os_string(),
+        },
+        EnvironmentChange::Set {
+          name:  "CARGO_TARGET_DIR".into(),
+          value: broken_target.as_os_str().to_os_string(),
+        },
+      ]);
     })?;
 
     ensure_all(&[

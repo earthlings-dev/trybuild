@@ -27,10 +27,13 @@ pub(super) struct ExpandedTest {
 /// matched file and assigning every entry a unique bin name.
 #[allow(
   clippy::single_call_fn,
-  reason = "the glob-expansion entry point the runner calls by name; the module's reason for existing"
+  reason = "glob expansion is the deterministic registration phase that deduplicates explicit paths, orders matches, and assigns generated target names"
 )]
 pub(super) fn expand_globs(tests: &[Test]) -> Vec<ExpandedTest> {
-  let mut set = ExpandedTestSet::new();
+  let mut set = ExpandedTestSet {
+    vec:           Vec::new(),
+    path_to_index: Map::new(),
+  };
 
   for case in tests {
     match case.path.to_str() {
@@ -66,19 +69,6 @@ struct ExpandedTestSet {
 }
 
 impl ExpandedTestSet {
-  /// Creates an empty set.
-  #[allow(
-    clippy::single_call_fn,
-    reason = "the accumulator constructor paired with `insert` on the same private type, keeping ExpandedTestSet's invariants \
-              self-contained"
-  )]
-  const fn new() -> Self {
-    Self {
-      vec:           Vec::new(),
-      path_to_index: Map::new(),
-    }
-  }
-
   /// Adds a case, or — when the path was already added from a glob — updates
   /// that entry's expectation rather than duplicating it.
   fn insert(&mut self, case: Test, error: Option<crate::TryBuildError>, is_from_glob: bool) {
@@ -107,7 +97,7 @@ impl ExpandedTestSet {
 /// Expands one glob pattern into a sorted list of matching paths.
 #[allow(
   clippy::single_call_fn,
-  reason = "a named helper wrapping glob iteration with sorting and error mapping, lifted out so expand_globs reads as one match"
+  reason = "glob expansion owns deterministic lexical ordering and converts per-entry traversal failures into runner errors"
 )]
 fn glob(pattern: &str) -> Result<Vec<PathBuf>> {
   let mut paths = glob::glob(pattern)?

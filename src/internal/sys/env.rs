@@ -34,8 +34,7 @@ impl Update {
   /// Returns [`SysError::UpdateVar`] if the variable holds an unrecognized value.
   #[allow(
     clippy::single_call_fn,
-    reason = "the constructor reading the update mode from the TRYBUILD variable, kept on Update's own type so the env-var contract lives \
-              with the enum it produces"
+    reason = "update-mode observation is the host environment boundary for the human runner"
   )]
   pub(in crate::internal) fn env() -> Result<Self> {
     let var = env::var_os("TRYBUILD");
@@ -45,7 +44,7 @@ impl Update {
   /// Parses an optional raw `TRYBUILD` value.
   #[allow(
     clippy::single_call_fn,
-    reason = "TRYBUILD parsing is intentionally separated from environment access so tests do not mutate process env"
+    reason = "update-mode parsing defines the complete `TRYBUILD` vocabulary independently of host environment observation"
   )]
   pub(in crate::internal) fn parse(raw: Option<&OsStr>) -> Result<Self> {
     let Some(var) = raw else {

@@ -25,25 +25,26 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
-      # CI calls xtask directly: GitHub sets CI=true, which satisfies the
-      # `just`/CI invocation guard. `cargo xtask init` is the single source of
-      # truth for toolchains, components, targets, and every cargo tool — the
-      # workflow duplicates no tool list (same contract as ci.yml).
-      - name: Bootstrap toolchains, components, targets, and tools
-        run: cargo xtask init
+      - name: Install the template workflow
+        run: cargo install --git https://github.com/earthlings-dev/template-rs.git --branch main --bin template template-cli
 
-      - name: cargo xtask audit
-        run: cargo xtask audit
+      # The installed command remains the single source of truth for
+      # toolchains, components, targets, and every Cargo tool.
+      - name: Bootstrap toolchains, components, targets, and tools
+        run: template init
+
+      - name: template audit
+        run: template audit
 
       # Enforces the TOTAL and per-file coverage floors (see
-      # strict-xtask-cargo's coverage workflow), writes summary.txt /
+      # the installed Cargo coverage workflow), writes summary.txt /
       # lcov.info / html/ / mode.txt under cov/, and refreshes the full badge
       # set.
-      - name: cargo xtask coverage --per-file
-        run: cargo xtask coverage --per-file
+      - name: template coverage --per-file
+        run: template coverage --per-file
 
-      - name: cargo xtask coverage-per-feature
-        run: cargo xtask coverage-per-feature
+      - name: template coverage-per-feature
+        run: template coverage-per-feature
 
       # Upload the reports even when the floor gate fails — the gate runs
       # after the writes, so the numbers behind a breach are inspectable.

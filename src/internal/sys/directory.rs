@@ -36,8 +36,7 @@ impl Directory {
   /// The current working directory.
   #[allow(
     clippy::single_call_fn,
-    reason = "a constructor on Directory's cohesive API, keeping current-dir interop with the std boundary inside the type alongside \
-              `new`/`parent`/`canonicalize`"
+    reason = "current-directory observation converts the operating-system path directly into the directory wrapper's trailing-separator invariant"
   )]
   pub(in crate::internal) fn current() -> io::Result<Self> {
     env::current_dir().map(Self::new)

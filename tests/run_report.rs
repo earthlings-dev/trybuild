@@ -5,8 +5,7 @@
 
 #[cfg(test)]
 mod tests {
-  use std::process::Command;
-
+  use strict_standard::EnvironmentChange;
   use strict_test_support::Expect;
   use strict_test_support::TempDir;
   use strict_test_support::TestFailure;
@@ -17,15 +16,23 @@ mod tests {
 
   #[test]
   fn run_reports_env_empty_and_metadata_setup_failures() -> Result<(), TestFailure> {
-    let invalid = capture_ignored_test_with("tests::invalid_trybuild_value_child", |command| {
-      let _: &mut Command = command.env("TRYBUILD", "later");
+    let invalid = capture_ignored_test_with("tests::invalid_trybuild_value_child", |request| {
+      request.environment.push(EnvironmentChange::Set {
+        name:  "TRYBUILD".into(),
+        value: "later".into(),
+      });
     })?;
-    let no_cases = capture_ignored_test_with("tests::no_cases_child", |command| {
-      let _: &mut Command = command.env_remove("TRYBUILD");
+    let no_cases = capture_ignored_test_with("tests::no_cases_child", |request| {
+      request.environment.push(EnvironmentChange::Remove {
+        name: "TRYBUILD".into(),
+      });
     })?;
     let fixture = TempDir::new("run-report-metadata")?;
-    let metadata = capture_ignored_test_with("tests::metadata_failure_child", |command| {
-      let _: &mut Command = command.current_dir(fixture.path()).env_remove("CARGO_MANIFEST_DIR");
+    let metadata = capture_ignored_test_with("tests::metadata_failure_child", |request| {
+      request.current_dir = Some(fixture.path().to_path_buf());
+      request.environment.push(EnvironmentChange::Remove {
+        name: "CARGO_MANIFEST_DIR".into(),
+      });
     })?;
 
     ensure_all(&[

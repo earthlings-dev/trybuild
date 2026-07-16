@@ -36,7 +36,7 @@ use crate::internal::runner::RunnerError;
 /// Renders one resolved case: the `test <name> ...` prefix, then its outcome.
 #[allow(
   clippy::single_call_fn,
-  reason = "the per-case render entry point invoked from run's streaming view closure"
+  reason = "per-case rendering is the view boundary that maps every typed outcome onto the terminal protocol"
 )]
 pub(in crate::internal) fn render_case<W>(reporter: &mut Reporter<W>, case: &CaseReport, show_expected: bool)
 where
@@ -81,7 +81,7 @@ where
 /// Reports that no trybuild tests were enabled.
 #[allow(
   clippy::single_call_fn,
-  reason = "the no-tests-enabled render, kept beside the other case renders rather than inlined into run"
+  reason = "the empty-suite terminal state has a distinct color and message contract from resolved case outcomes"
 )]
 pub(in crate::internal) fn render_no_tests<W>(reporter: &mut Reporter<W>)
 where
@@ -95,7 +95,7 @@ where
 /// Renders a passing case: `ok`, plus any captured run output of a pass-test.
 #[allow(
   clippy::single_call_fn,
-  reason = "a named outcome render dispatched from render_case, paired with render_wip/render_overwrite"
+  reason = "passing-case rendering maps warnings and captured output streams onto the successful terminal protocol"
 )]
 fn render_pass<W>(reporter: &mut Reporter<W>, detail: &PassDetail)
 where
@@ -118,7 +118,7 @@ where
 /// Renders a newly created `wip` snapshot and where to move it.
 #[allow(
   clippy::single_call_fn,
-  reason = "a named outcome render dispatched from render_case, paired with render_pass/render_overwrite"
+  reason = "new-snapshot rendering reports the wip path, destination path, and exact diagnostic body required for reconciliation"
 )]
 fn render_wip<W>(reporter: &mut Reporter<W>, detail: &WipDetail)
 where
@@ -141,7 +141,7 @@ where
 /// Renders a snapshot overwritten in place.
 #[allow(
   clippy::single_call_fn,
-  reason = "a named outcome render dispatched from render_case, paired with render_pass/render_wip"
+  reason = "overwrite rendering reports the in-place destination and exact diagnostic body under the overwrite protocol"
 )]
 fn render_overwrite<W>(reporter: &mut Reporter<W>, detail: &OverwriteDetail)
 where
@@ -163,8 +163,7 @@ where
 /// back to the error's `Display` for failures without a richer rendering.
 #[allow(
   clippy::single_call_fn,
-  reason = "the failing-case render dispatcher invoked from render_case; an if-let chain so it need not match the whole non_exhaustive \
-            taxonomy"
+  reason = "failure rendering dispatches the supported rich error taxonomy while preserving a display fallback for non-exhaustive errors"
 )]
 fn render_error<W>(reporter: &mut Reporter<W>, error: &TryBuildError)
 where
@@ -186,7 +185,7 @@ where
 /// Renders the expected-vs-actual diff of a snapshot mismatch.
 #[allow(
   clippy::single_call_fn,
-  reason = "the mismatch render, the most involved failing-case rendering, kept on its own off render_error's dispatch"
+  reason = "mismatch rendering owns expected-versus-actual sections, optional highlighting, and snapshot blessing guidance"
 )]
 fn mismatch<W>(reporter: &mut Reporter<W>, expected: &str, actual: &str)
 where
@@ -217,7 +216,7 @@ where
 /// Computes a renderable diff only for terminals where highlighting is useful.
 #[allow(
   clippy::single_call_fn,
-  reason = "diff eligibility is a pure render policy seam tested without mutating TERM"
+  reason = "diff eligibility separates terminal-capability policy from host environment observation and diff construction"
 )]
 fn compute_diff<'a>(term: Option<&OsStr>, expected: &'a str, actual: &'a str) -> Option<Diff<'a>> {
   if term.is_none_or(|terminal_name| terminal_name == OsStr::new("dumb")) {
@@ -231,7 +230,7 @@ fn compute_diff<'a>(term: Option<&OsStr>, expected: &'a str, actual: &'a str) ->
 /// Renders a `compile_fail` case that unexpectedly compiled, with its output.
 #[allow(
   clippy::single_call_fn,
-  reason = "a named failing-case render dispatched from render_error"
+  reason = "unexpected-compilation rendering preserves the compile-fail contract, captured stdout, and compiler warnings"
 )]
 fn compiled_unexpectedly<W>(reporter: &mut Reporter<W>, detail: &UnexpectedSuccess)
 where
@@ -252,7 +251,7 @@ where
 /// Renders a pass-test that failed to build.
 #[allow(
   clippy::single_call_fn,
-  reason = "a named failing-case render dispatched from render_error"
+  reason = "pass-case build-failure rendering emits normalized compiler diagnostics under the error protocol"
 )]
 fn failed_to_build<W>(reporter: &mut Reporter<W>, stderr: &str)
 where
@@ -267,7 +266,7 @@ where
 /// Renders a pass-test that compiled but failed at runtime, with its output.
 #[allow(
   clippy::single_call_fn,
-  reason = "a named failing-case render dispatched from render_error"
+  reason = "runtime-failure rendering distinguishes silent failure from captured output and preserves build warnings"
 )]
 fn run_failed<W>(reporter: &mut Reporter<W>, detail: &RunOutput)
 where
@@ -310,7 +309,7 @@ where
 /// Renders a failing case with no richer data than its `Display` message.
 #[allow(
   clippy::single_call_fn,
-  reason = "the generic failing-case render, the fallback arm of render_error's dispatch"
+  reason = "generic error rendering is the fallback protocol for typed failures without a richer structured view"
 )]
 fn error_line<W>(reporter: &mut Reporter<W>, error: &TryBuildError)
 where

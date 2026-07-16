@@ -25,8 +25,7 @@ impl Reporter<StandardStream> {
   /// Creates a reporter writing to stderr with automatic color detection.
   #[allow(
     clippy::single_call_fn,
-    reason = "the Reporter constructor on its public API surface, kept beside the writer it initializes rather than inlined at the \
-              orchestrator"
+    reason = "production reporter construction binds automatic color detection to the stderr output boundary"
   )]
   pub(in crate::internal) fn new() -> Self {
     Self {

@@ -86,8 +86,7 @@ impl Selected {
   /// Builds the selection from whether each kind of case was seen.
   #[allow(
     clippy::single_call_fn,
-    reason = "the Selected constructor mapping the (has_pass, has_compile_fail) pair onto the enum, kept on the type beside has_pass/both \
-              rather than inlined at its lone call site in prepare"
+    reason = "case-polarity classification converts the complete boolean input space into one exhaustive selection state"
   )]
   pub(in crate::internal) const fn from_flags(has_pass: bool, has_compile_fail: bool) -> Self {
     match (has_pass, has_compile_fail) {
