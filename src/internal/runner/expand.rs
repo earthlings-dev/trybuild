@@ -27,7 +27,8 @@ pub(super) struct ExpandedTest {
 /// matched file and assigning every entry a unique bin name.
 #[allow(
   clippy::single_call_fn,
-  reason = "glob expansion is the deterministic registration phase that deduplicates explicit paths, orders matches, and assigns generated target names"
+  reason = "glob expansion is the deterministic registration phase that deduplicates explicit paths, orders matches, and assigns \
+            generated target names"
 )]
 pub(super) fn expand_globs(tests: &[Test]) -> Vec<ExpandedTest> {
   let mut set = ExpandedTestSet {

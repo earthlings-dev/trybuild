@@ -24,7 +24,7 @@ mod tests {
     })?;
     let no_cases = capture_ignored_test_with("tests::no_cases_child", |request| {
       request.environment.push(EnvironmentChange::Remove {
-        name: "TRYBUILD".into(),
+        name: "TRYBUILD".into()
       });
     })?;
     let fixture = TempDir::new("run-report-metadata")?;

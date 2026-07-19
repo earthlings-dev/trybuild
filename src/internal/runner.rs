@@ -273,7 +273,8 @@ fn aggregate(report: &Report) -> error::Result<()> {
 /// and builds the generated manifest under the requested `update` mode.
 #[allow(
   clippy::single_call_fn,
-  reason = "project preparation is the orchestration phase that converts registered cases and Cargo metadata into one throwaway build model"
+  reason = "project preparation is the orchestration phase that converts registered cases and Cargo metadata into one throwaway build \
+            model"
 )]
 fn prepare(tests: &[ExpandedTest], update: Update) -> error::Result<Project> {
   let Metadata {
@@ -381,7 +382,8 @@ fn write(project: &mut Project) -> error::Result<()> {
 /// workspace `[patch]`/`[replace]`, and registers one `[[bin]]` per test file.
 #[allow(
   clippy::single_call_fn,
-  reason = "manifest synthesis owns dependency merging, target registration, feature pruning, and workspace inheritance as one convergence phase"
+  reason = "manifest synthesis owns dependency merging, target registration, feature pruning, and workspace inheritance as one \
+            convergence phase"
 )]
 fn make_manifest(
   workspace: &Directory,
@@ -509,7 +511,8 @@ fn merge_dependencies(
 /// exposes a library target.
 #[allow(
   clippy::single_call_fn,
-  reason = "feature pruning retains only valid optional dependency enables and prefixes the crate-under-test feature edge when a library exists"
+  reason = "feature pruning retains only valid optional dependency enables and prefixes the crate-under-test feature edge when a library \
+            exists"
 )]
 fn prune_features(
   mut features: Map<String, Vec<String>>,
@@ -556,7 +559,8 @@ const fn is_optional(dependency: Option<&Dependency>) -> bool {
 /// output, collecting one [`CaseReport`] per case.
 #[allow(
   clippy::single_call_fn,
-  reason = "batched evaluation attributes one keep-going Cargo result across every compile-fail case before applying per-case snapshot policy"
+  reason = "batched evaluation attributes one keep-going Cargo result across every compile-fail case before applying per-case snapshot \
+            policy"
 )]
 fn run_all(
   project: &Project,
@@ -602,7 +606,8 @@ impl Test {
   /// producing its [`Outcome`] or the typed failure.
   #[allow(
     clippy::single_call_fn,
-    reason = "single-case evaluation is the state transition from source registration through Cargo output attribution to typed outcome policy"
+    reason = "single-case evaluation is the state transition from source registration through Cargo output attribution to typed outcome \
+              policy"
   )]
   fn evaluate(&self, project: &Project, name: &Name) -> error::Result<Outcome> {
     check_exists(&self.path)?;
@@ -639,7 +644,8 @@ impl Test {
   /// failing — carrying the run output either way.
   #[allow(
     clippy::single_call_fn,
-    reason = "pass-case interpretation requires successful compilation followed by successful executable completion with captured diagnostics"
+    reason = "pass-case interpretation requires successful compilation followed by successful executable completion with captured \
+              diagnostics"
   )]
   fn check_pass(
     project: &Project,
@@ -748,7 +754,8 @@ impl Test {
 /// or creating it in place under [`Overwrite`](Update::Overwrite).
 #[allow(
   clippy::single_call_fn,
-  reason = "missing-snapshot reconciliation exhaustively maps Verify, Wip, and Overwrite modes onto typed failures or filesystem transitions"
+  reason = "missing-snapshot reconciliation exhaustively maps Verify, Wip, and Overwrite modes onto typed failures or filesystem \
+            transitions"
 )]
 fn missing_snapshot(update: Update, stderr_path: PathBuf, preferred: &str) -> error::Result<Outcome> {
   match update {
@@ -1017,12 +1024,9 @@ mod tests {
         resolver: None,
         publish:  false,
       },
-      features:       [
-        ("diff".to_owned(), Vec::new()),
-        ("serde".to_owned(), Vec::new()),
-      ]
-      .into_iter()
-      .collect(),
+      features:       [("diff".to_owned(), Vec::new()), ("serde".to_owned(), Vec::new())]
+        .into_iter()
+        .collect(),
       dependencies:   Map::new(),
       target:         Map::new(),
       bins:           Vec::new(),

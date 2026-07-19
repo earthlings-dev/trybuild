@@ -196,7 +196,8 @@ pub(in crate::internal) fn trim<S: AsRef<[u8]>>(output: S) -> String {
 /// unindents and trims the result.
 #[allow(
   clippy::single_call_fn,
-  reason = "one normalization stage applies a versioned rule set, block unindentation, and final stream trimming as an atomic snapshot transform"
+  reason = "one normalization stage applies a versioned rule set, block unindentation, and final stream trimming as an atomic snapshot \
+            transform"
 )]
 fn apply(original: &str, normalization: Normalization, context: &Context<'_>) -> String {
   let mut normalized = String::new();

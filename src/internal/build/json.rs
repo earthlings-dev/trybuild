@@ -193,7 +193,8 @@ fn record_diagnostic(
 /// registered test target.
 #[allow(
   clippy::single_call_fn,
-  reason = "compiler-artifact attribution is a distinct Cargo JSON interpretation rule that records executables only for registered targets"
+  reason = "compiler-artifact attribution is a distinct Cargo JSON interpretation rule that records executables only for registered \
+            targets"
 )]
 fn record_executable(
   path_map: &Map<CanonicalPath, (&Name, &Test)>,

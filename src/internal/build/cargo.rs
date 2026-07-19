@@ -88,20 +88,12 @@ where
 
   /// Construct a project Cargo request with trybuild's deterministic environment
   /// and Rust flags.
-  fn project_request<I, S>(
-    &self,
-    project: &Project,
-    extra_rustflags: &[&'static str],
-    arguments: I,
-  ) -> ProcessRequest
+  fn project_request<I, S>(&self, project: &Project, extra_rustflags: &[&'static str], arguments: I) -> ProcessRequest
   where
     I: IntoIterator<Item = S>,
     S: Into<OsString>,
   {
-    let rustflags = rustflags::toml_from(
-      self.inherited_rustflags.clone(),
-      extra_rustflags,
-    );
+    let rustflags = rustflags::toml_from(self.inherited_rustflags.clone(), extra_rustflags);
     let mut request = self.raw_request(
       [
         OsString::from("--offline"),
@@ -114,14 +106,14 @@ where
     request.current_dir = Some(project.dir.as_ref().to_path_buf());
     request.environment.extend([
       EnvironmentChange::Set {
-        name: "CARGO_TARGET_DIR".into(),
+        name:  "CARGO_TARGET_DIR".into(),
         value: path!(project.target_dir / "tests" / "trybuild").into_os_string(),
       },
       EnvironmentChange::Remove {
-        name: "RUSTFLAGS".into(),
+        name: "RUSTFLAGS".into()
       },
       EnvironmentChange::Set {
-        name: "CARGO_INCREMENTAL".into(),
+        name:  "CARGO_INCREMENTAL".into(),
         value: "0".into(),
       },
     ]);
@@ -137,8 +129,8 @@ where
 /// Build a production Cargo context from current host observations.
 fn system_cargo() -> CargoContext<SystemEffects> {
   CargoContext {
-    executor: SystemEffects,
-    program: env::var_os("CARGO").unwrap_or_else(|| OsString::from("cargo")),
+    executor:            SystemEffects,
+    program:             env::var_os("CARGO").unwrap_or_else(|| OsString::from("cargo")),
     inherited_rustflags: env::var_os("RUSTFLAGS"),
   }
 }
@@ -202,10 +194,7 @@ pub(in crate::internal) fn build_dependencies(project: &mut Project) -> Result<(
   clippy::single_call_fn,
   reason = "injected dependency preparation defines the ordered Cargo request protocol and its terminal failure boundary"
 )]
-fn build_dependencies_with<E>(
-  cargo: &CargoContext<E>,
-  project: &mut Project,
-) -> Result<()>
+fn build_dependencies_with<E>(cargo: &CargoContext<E>, project: &mut Project) -> Result<()>
 where
   E: ProcessExecutor,
 {
@@ -223,26 +212,15 @@ where
       if err.kind() == io::ErrorKind::NotFound {
         // Best-effort: a failure surfaces from the build invocation below.
         // Captured (not inherited) so `try_run` writes nothing to the terminal.
-        let request = cargo.project_request(
-          project,
-          &[],
-          [OsString::from("generate-lockfile")],
-        );
+        let request = cargo.project_request(project, &[], [OsString::from("generate-lockfile")]);
         let _generated = cargo.execute(&request);
       }
     }
   }
 
-  let mut arguments = vec![OsString::from(if project.selected.has_pass() {
-    "build"
-  } else {
-    "check"
-  })];
+  let mut arguments = vec![OsString::from(if project.selected.has_pass() { "build" } else { "check" })];
   arguments.extend(target().into_iter().map(OsString::from));
-  arguments.extend([
-    OsString::from("--bin"),
-    OsString::from(project.name.as_str()),
-  ]);
+  arguments.extend([OsString::from("--bin"), OsString::from(project.name.as_str())]);
   arguments.extend(features(project).into_iter().map(OsString::from));
   let request = cargo.project_request(project, &[], arguments);
 
@@ -271,16 +249,12 @@ where
 
   // Best-effort suite-level clean: dependency artifacts remain reusable, while
   // stale generated-package diagnostics from a prior run are cleared once.
-  let mut clean_request = cargo.project_request(
-    project,
-    &[],
-    [
-      OsString::from("clean"),
-      OsString::from("--package"),
-      OsString::from(project.name.as_str()),
-      OsString::from("--color=never"),
-    ],
-  );
+  let mut clean_request = cargo.project_request(project, &[], [
+    OsString::from("clean"),
+    OsString::from("--package"),
+    OsString::from(project.name.as_str()),
+    OsString::from("--color=never"),
+  ]);
   clean_request.stdout = OutputPolicy::Discard;
   clean_request.stderr = OutputPolicy::Discard;
   let _cleaned = cargo.execute(&clean_request);
@@ -296,10 +270,7 @@ where
   clippy::single_call_fn,
   reason = "single-case build binds production Cargo execution to the named-bin diagnostic request contract"
 )]
-pub(in crate::internal) fn build_test(
-  project: &Project,
-  name: &Name,
-) -> Result<ProcessOutput> {
+pub(in crate::internal) fn build_test(project: &Project, name: &Name) -> Result<ProcessOutput> {
   build_test_with(&system_cargo(), project, name)
 }
 
@@ -308,20 +279,12 @@ pub(in crate::internal) fn build_test(
   clippy::single_call_fn,
   reason = "injected single-case build constructs the exact named-bin diagnostic request independently of host execution"
 )]
-fn build_test_with<E>(
-  cargo: &CargoContext<E>,
-  project: &Project,
-  name: &Name,
-) -> Result<ProcessOutput>
+fn build_test_with<E>(cargo: &CargoContext<E>, project: &Project, name: &Name) -> Result<ProcessOutput>
 where
   E: ProcessExecutor,
 {
   let arguments = build_arguments(project, BuildSelection::Named(name), false);
-  let request = cargo.project_request(
-    project,
-    &["--diagnostic-width=140"],
-    arguments,
-  );
+  let request = cargo.project_request(project, &["--diagnostic-width=140"], arguments);
   cargo.execute(&request)
 }
 
@@ -335,9 +298,7 @@ where
   clippy::single_call_fn,
   reason = "batched build binds production Cargo execution to the all-bins keep-going diagnostic contract"
 )]
-pub(in crate::internal) fn build_all_tests(
-  project: &Project,
-) -> Result<ProcessOutput> {
+pub(in crate::internal) fn build_all_tests(project: &Project) -> Result<ProcessOutput> {
   build_all_tests_with(&system_cargo(), project)
 }
 
@@ -346,19 +307,12 @@ pub(in crate::internal) fn build_all_tests(
   clippy::single_call_fn,
   reason = "injected batched build constructs the all-bins keep-going Cargo grammar independently of host execution"
 )]
-fn build_all_tests_with<E>(
-  cargo: &CargoContext<E>,
-  project: &Project,
-) -> Result<ProcessOutput>
+fn build_all_tests_with<E>(cargo: &CargoContext<E>, project: &Project) -> Result<ProcessOutput>
 where
   E: ProcessExecutor,
 {
   let arguments = build_arguments(project, BuildSelection::All, true);
-  let request = cargo.project_request(
-    project,
-    &["--diagnostic-width=140"],
-    arguments,
-  );
+  let request = cargo.project_request(project, &["--diagnostic-width=140"], arguments);
   cargo.execute(&request)
 }
 
@@ -371,11 +325,7 @@ where
   clippy::single_call_fn,
   reason = "pass-test execution binds production process effects to the direct-binary and Cargo-fallback selection policy"
 )]
-pub(in crate::internal) fn run_test(
-  project: &Project,
-  name: &Name,
-  executable_path: Option<&Path>,
-) -> Result<ProcessOutput> {
+pub(in crate::internal) fn run_test(project: &Project, name: &Name, executable_path: Option<&Path>) -> Result<ProcessOutput> {
   run_test_with(&system_cargo(), project, name, executable_path)
 }
 
@@ -384,12 +334,7 @@ pub(in crate::internal) fn run_test(
   clippy::single_call_fn,
   reason = "injected pass-test execution selects between the direct executable request and Cargo fallback without host coupling"
 )]
-fn run_test_with<E>(
-  cargo: &CargoContext<E>,
-  project: &Project,
-  name: &Name,
-  executable_path: Option<&Path>,
-) -> Result<ProcessOutput>
+fn run_test_with<E>(cargo: &CargoContext<E>, project: &Project, name: &Name, executable_path: Option<&Path>) -> Result<ProcessOutput>
 where
   E: ProcessExecutor,
 {
@@ -406,22 +351,19 @@ where
   clippy::single_call_fn,
   reason = "this planner defines the direct pass-test execution contract separately from the Cargo fallback grammar"
 )]
-fn built_executable_request(
-  project: &Project,
-  executable: &Path,
-) -> ProcessRequest {
+fn built_executable_request(project: &Project, executable: &Path) -> ProcessRequest {
   let mut request = ProcessRequest::new(executable, iter::empty::<OsString>());
   request.current_dir = Some(project.dir.as_ref().to_path_buf());
   request.environment.extend([
     EnvironmentChange::Set {
-      name: "CARGO_TARGET_DIR".into(),
+      name:  "CARGO_TARGET_DIR".into(),
       value: path!(project.target_dir / "tests" / "trybuild").into_os_string(),
     },
     EnvironmentChange::Remove {
-      name: "RUSTFLAGS".into(),
+      name: "RUSTFLAGS".into()
     },
     EnvironmentChange::Set {
-      name: "CARGO_INCREMENTAL".into(),
+      name:  "CARGO_INCREMENTAL".into(),
       value: "0".into(),
     },
   ]);
@@ -436,25 +378,15 @@ fn built_executable_request(
   clippy::single_call_fn,
   reason = "this planner preserves the distinct Cargo-run fallback grammar used only when build JSON omits an executable"
 )]
-fn cargo_run_request<E>(
-  cargo: &CargoContext<E>,
-  project: &Project,
-  name: &Name,
-) -> ProcessRequest
+fn cargo_run_request<E>(cargo: &CargoContext<E>, project: &Project, name: &Name) -> ProcessRequest
 where
   E: ProcessExecutor,
 {
   let mut arguments = vec![OsString::from("run")];
   arguments.extend(target().into_iter().map(OsString::from));
-  arguments.extend([
-    OsString::from("--bin"),
-    name.as_ref().to_os_string(),
-  ]);
+  arguments.extend([OsString::from("--bin"), name.as_ref().to_os_string()]);
   arguments.extend(features(project).into_iter().map(OsString::from));
-  arguments.extend([
-    OsString::from("--quiet"),
-    OsString::from("--color=never"),
-  ]);
+  arguments.extend([OsString::from("--quiet"), OsString::from("--color=never")]);
   cargo.project_request(project, &[], arguments)
 }
 
@@ -502,23 +434,12 @@ enum BuildSelection<'name> {
 }
 
 /// Construct the Cargo arguments shared by single and batched diagnostic builds.
-fn build_arguments(
-  project: &Project,
-  selection: BuildSelection<'_>,
-  keep_going: bool,
-) -> Vec<OsString> {
-  let mut arguments = vec![OsString::from(if project.selected.has_pass() {
-    "build"
-  } else {
-    "check"
-  })];
+fn build_arguments(project: &Project, selection: BuildSelection<'_>, keep_going: bool) -> Vec<OsString> {
+  let mut arguments = vec![OsString::from(if project.selected.has_pass() { "build" } else { "check" })];
   arguments.extend(target().into_iter().map(OsString::from));
   match selection {
     BuildSelection::Named(name) => {
-      arguments.extend([
-        OsString::from("--bin"),
-        name.as_ref().to_os_string(),
-      ]);
+      arguments.extend([OsString::from("--bin"), name.as_ref().to_os_string()]);
     }
     BuildSelection::All => arguments.push("--bins".into()),
   }
@@ -577,9 +498,9 @@ mod tests {
   use std::path::PathBuf;
   use std::result::Result as StdResult;
 
+  use strict_test_support::RecordingEffects;
   use strict_test_support::TempDir;
   use strict_test_support::TestFailure;
-  use strict_test_support::RecordingEffects;
   use strict_test_support::ensure;
   use strict_test_support::ensure_all;
   use strict_test_support::ensure_ok_source;
@@ -842,17 +763,12 @@ path = "main.rs"
   #[test]
   fn single_build_plans_the_exact_cargo_request() -> StdResult<(), TestFailure> {
     let fixture = TempDir::new("single-build-request")?;
-    let project = project(
-      &fixture,
-      "demo-tests",
-      Selected::CompileFailOnly,
-      Some(vec!["extra".to_owned()]),
-    );
+    let project = project(&fixture, "demo-tests", Selected::CompileFailOnly, Some(vec!["extra".to_owned()]));
     let recorder = RecordingEffects::default();
     recorder.queue_process_result(Ok(process_output(0, b"json".to_vec(), Vec::new())?));
     let cargo = CargoContext {
-      executor: recorder.clone(),
-      program: OsString::from("cargo-fixture"),
+      executor:            recorder.clone(),
+      program:             OsString::from("cargo-fixture"),
       inherited_rustflags: Some(OsString::from("-C instrument-coverage")),
     };
 
@@ -864,10 +780,7 @@ path = "main.rs"
       recorder.process_requests().into_iter().next(),
       "the single build must execute one process request",
     )?;
-    let rustflags = rustflags::toml_from(
-      Some(OsString::from("-C instrument-coverage")),
-      &["--diagnostic-width=140"],
-    );
+    let rustflags = rustflags::toml_from(Some(OsString::from("-C instrument-coverage")), &["--diagnostic-width=140"]);
     let mut expected_arguments = vec![
       OsString::from("--offline"),
       OsString::from(format!("--config=build.rustflags={rustflags}")),
@@ -886,24 +799,24 @@ path = "main.rs"
       OsString::from("--message-format=json"),
     ]);
     let expected = ProcessRequest {
-      program: OsString::from("cargo-fixture"),
-      arguments: expected_arguments,
+      program:     OsString::from("cargo-fixture"),
+      arguments:   expected_arguments,
       current_dir: Some(project.dir.as_ref().to_path_buf()),
       environment: vec![
         EnvironmentChange::Set {
-          name: "CARGO_TARGET_DIR".into(),
+          name:  "CARGO_TARGET_DIR".into(),
           value: path!(project.target_dir / "tests" / "trybuild").into_os_string(),
         },
         EnvironmentChange::Remove {
-          name: "RUSTFLAGS".into(),
+          name: "RUSTFLAGS".into()
         },
         EnvironmentChange::Set {
-          name: "CARGO_INCREMENTAL".into(),
+          name:  "CARGO_INCREMENTAL".into(),
           value: "0".into(),
         },
       ],
-      stdout: OutputPolicy::Capture,
-      stderr: OutputPolicy::Capture,
+      stdout:      OutputPolicy::Capture,
+      stderr:      OutputPolicy::Capture,
     };
 
     ensure(output.stdout == b"json", "the process outcome bytes must be returned unchanged")?;
@@ -922,14 +835,10 @@ path = "main.rs"
     let fixture = TempDir::new("batched-build-request")?;
     let project = project(&fixture, "demo-tests", Selected::CompileFailOnly, None);
     let recorder = RecordingEffects::default();
-    recorder.queue_process_result(Ok(process_output(
-      101,
-      b"compiler-json".to_vec(),
-      b"compiler-stderr".to_vec(),
-    )?));
+    recorder.queue_process_result(Ok(process_output(101, b"compiler-json".to_vec(), b"compiler-stderr".to_vec())?));
     let cargo = CargoContext {
-      executor: recorder.clone(),
-      program: OsString::from("cargo-fixture"),
+      executor:            recorder.clone(),
+      program:             OsString::from("cargo-fixture"),
       inherited_rustflags: None,
     };
 
@@ -947,14 +856,8 @@ path = "main.rs"
       "strict-standard must not interpret Cargo's compiler-failure status",
     )?;
     ensure(
-      request
-        .arguments
-        .iter()
-        .any(|argument| argument == "--bins")
-        && request
-          .arguments
-          .iter()
-          .any(|argument| argument == "--keep-going")
+      request.arguments.iter().any(|argument| argument == "--bins")
+        && request.arguments.iter().any(|argument| argument == "--keep-going")
         && request.arguments.iter().all(|argument| argument != "--bin"),
       "the batched grammar must select all bins with keep-going and no named-bin option",
     )
@@ -977,14 +880,10 @@ path = "main.rs"
       "the generated project directory must exist",
     )?;
     let recorder = RecordingEffects::default();
-    recorder.queue_process_result(Ok(process_output(
-      101,
-      Vec::new(),
-      b"dependency failed".to_vec(),
-    )?));
+    recorder.queue_process_result(Ok(process_output(101, Vec::new(), b"dependency failed".to_vec())?));
     let cargo = CargoContext {
-      executor: recorder.clone(),
-      program: OsString::from("cargo-fixture"),
+      executor:            recorder.clone(),
+      program:             OsString::from("cargo-fixture"),
       inherited_rustflags: None,
     };
 
@@ -1003,32 +902,22 @@ path = "main.rs"
     let fixture = TempDir::new("dependency-keep-going")?;
     let workspace = fixture.child("workspace");
     let generated = fixture.child("project");
-    ensure_ok_source(
-      fs::create_dir_all(&workspace),
-      "the workspace fixture directory must exist",
-    )?;
+    ensure_ok_source(fs::create_dir_all(&workspace), "the workspace fixture directory must exist")?;
     ensure_ok_source(
       fs::write(workspace.join("Cargo.lock"), ""),
       "the workspace lockfile must suppress lockfile generation",
     )?;
-    ensure_ok_source(
-      fs::create_dir_all(&generated),
-      "the generated project directory must exist",
-    )?;
+    ensure_ok_source(fs::create_dir_all(&generated), "the generated project directory must exist")?;
 
     for (probe_code, expected) in [(0, KeepGoing::Yes), (1, KeepGoing::No)] {
       let mut project = project(&fixture, "demo-tests", Selected::CompileFailOnly, None);
       let recorder = RecordingEffects::default();
       recorder.queue_process_result(Ok(process_output(0, Vec::new(), Vec::new())?));
-      recorder.queue_process_result(Ok(process_output(
-        probe_code,
-        Vec::new(),
-        Vec::new(),
-      )?));
+      recorder.queue_process_result(Ok(process_output(probe_code, Vec::new(), Vec::new())?));
       recorder.queue_process_result(Ok(process_output(0, Vec::new(), Vec::new())?));
       let cargo = CargoContext {
-        executor: recorder.clone(),
-        program: OsString::from("cargo-fixture"),
+        executor:            recorder.clone(),
+        program:             OsString::from("cargo-fixture"),
         inherited_rustflags: None,
       };
 
@@ -1037,14 +926,8 @@ path = "main.rs"
         "scripted dependency preparation must complete",
       )?;
       let requests = recorder.process_requests();
-      let probe = ensure_some(
-        requests.get(1),
-        "the second request must be the keep-going probe",
-      )?;
-      let clean = ensure_some(
-        requests.get(2),
-        "the third request must be the suite-level clean",
-      )?;
+      let probe = ensure_some(requests.get(1), "the second request must be the keep-going probe")?;
+      let clean = ensure_some(requests.get(2), "the third request must be the suite-level clean")?;
       ensure(
         project.keep_going == expected,
         "trybuild must interpret the keep-going probe status in both directions",
@@ -1075,55 +958,32 @@ path = "main.rs"
       fixture.child("target").display(),
       fixture.path().display(),
     );
-    recorder.queue_process_result(Ok(process_output(
-      0,
-      metadata_json.into_bytes(),
-      Vec::new(),
-    )?));
+    recorder.queue_process_result(Ok(process_output(0, metadata_json.into_bytes(), Vec::new())?));
     let cargo = CargoContext {
-      executor: recorder.clone(),
-      program: OsString::from("cargo-fixture"),
+      executor:            recorder.clone(),
+      program:             OsString::from("cargo-fixture"),
       inherited_rustflags: None,
     };
 
     let run_output = ensure_ok_source(
-      run_test_with(
-        &cargo,
-        &project,
-        &Name("demo-tests".to_owned()),
-        None,
-      ),
+      run_test_with(&cargo, &project, &Name("demo-tests".to_owned()), None),
       "the Cargo-run fallback must return its nonzero outcome as data",
     )?;
-    let metadata = ensure_ok_source(
-      metadata_with(&cargo),
-      "metadata parsing must decode the captured raw bytes",
-    )?;
+    let metadata = ensure_ok_source(metadata_with(&cargo), "metadata parsing must decode the captured raw bytes")?;
     let requests = recorder.process_requests();
-    let run_request = ensure_some(
-      requests.first(),
-      "the first request must be the Cargo-run fallback",
-    )?;
-    let metadata_request = ensure_some(
-      requests.get(1),
-      "the second request must be Cargo metadata",
-    )?;
-    let expected_metadata_arguments = [
-      "metadata",
-      "--no-deps",
-      "--format-version=1",
-    ]
-    .into_iter()
-    .map(OsString::from)
-    .collect::<Vec<_>>();
+    let run_request = ensure_some(requests.first(), "the first request must be the Cargo-run fallback")?;
+    let metadata_request = ensure_some(requests.get(1), "the second request must be Cargo metadata")?;
+    let expected_metadata_arguments = ["metadata", "--no-deps", "--format-version=1"]
+      .into_iter()
+      .map(OsString::from)
+      .collect::<Vec<_>>();
 
     ensure(
       run_output.status.code() == Some(7),
       "pass-test status interpretation must remain in trybuild's runner",
     )?;
     ensure(
-      run_request.arguments.iter().any(|argument| argument == "run")
-        && metadata_request.arguments == expected_metadata_arguments,
+      run_request.arguments.iter().any(|argument| argument == "run") && metadata_request.arguments == expected_metadata_arguments,
       "run and metadata must retain their distinct Cargo grammars",
     )?;
     ensure(
