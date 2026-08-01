@@ -97,7 +97,7 @@ disallowed-names = [
 
 # ── Disallowed macros (debug artefacts, stubs, ad-hoc error construction) ──
 # Ad-hoc error construction macros from `anyhow` are blocked workspace-wide;
-# boundary crates (bin, xtask) opt in via per-crate `[lints.clippy]` overrides.
+# boundary crates (bin, stask) opt in via per-crate `[lints.clippy]` overrides.
 disallowed-macros = [
   { path = "std::dbg", reason = "debug artefact — remove before committing" },
   { path = "std::todo", reason = "incomplete code must not land" },
@@ -106,9 +106,9 @@ disallowed-macros = [
   { path = "std::println", reason = "use tracing/log crate" },
   { path = "std::eprint", reason = "use tracing/log crate" },
   { path = "std::eprintln", reason = "use tracing/log crate" },
-  { path = "anyhow::anyhow", reason = "typed errors only; anyhow is permitted only at bin/xtask boundary points" },
-  { path = "anyhow::bail", reason = "typed errors only; anyhow is permitted only at bin/xtask boundary points" },
-  { path = "anyhow::ensure", reason = "typed errors only; anyhow is permitted only at bin/xtask boundary points" },
+  { path = "anyhow::anyhow", reason = "typed errors only; anyhow is permitted only at bin/stask boundary points" },
+  { path = "anyhow::bail", reason = "typed errors only; anyhow is permitted only at bin/stask boundary points" },
+  { path = "anyhow::ensure", reason = "typed errors only; anyhow is permitted only at bin/stask boundary points" },
   { path = "std::assert", reason = "panics; return Result + strict_test_support::ensure / ensure_eq" },
   { path = "std::assert_eq", reason = "panics; use strict_test_support::ensure_eq or ensure(a == b, ..)" },
   { path = "std::assert_ne", reason = "panics; use strict_test_support::ensure_ne or ensure(a != b, ..)" },
@@ -140,7 +140,7 @@ disallowed-methods = [
   { path = "std::time::SystemTime::now", reason = "non-deterministic; inject the clock or derive time from the seeded RNG, use chrono::Utc::now" },
   { path = "f64::to_string", reason = "financial precision" },
   { path = "f32::to_string", reason = "financial precision" },
-  { path = "anyhow::Error::msg", reason = "typed errors only; anyhow is permitted only at bin/xtask boundary points" },
+  { path = "anyhow::Error::msg", reason = "typed errors only; anyhow is permitted only at bin/stask boundary points" },
   { path = "slice::split_at", reason = "panics if mid > len; use split_at_checked" },
   { path = "slice::split_at_mut", reason = "panics if mid > len; use split_at_mut_checked" },
   { path = "slice::chunks", reason = "panics if chunk size == 0; validate the size first" },
@@ -180,7 +180,7 @@ disallowed-methods = [
 
 # ── Disallowed types (no type-erased or ad-hoc error wrappers in libraries) ─
 disallowed-types = [
-  { path = "anyhow::Error", reason = "typed errors only; anyhow is permitted only at bin/xtask boundary points" },
+  { path = "anyhow::Error", reason = "typed errors only; anyhow is permitted only at bin/stask boundary points" },
   { path = "anyhow::Result", reason = "typed errors only; use Result<T, YourCrateError>" },
   { path = "std::sync::Mutex", reason = "prefer parking_lot in sync code; use async-aware primitives or redesign shared state in async code" },
   { path = "std::sync::RwLock", reason = "prefer parking_lot in sync code; use async-aware primitives or redesign shared state in async code" },

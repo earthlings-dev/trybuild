@@ -5,12 +5,12 @@
 # in the justfile.
 
 [alias]
-# Workspace automation lives in the `xtask` crate. `cargo xtask <sub>` expands
-# to `cargo run --package xtask --quiet -- <sub>`. Every subcommand is Rust
+# Workspace automation lives in the `stask` crate. `cargo stask <sub>` expands
+# to `cargo run --package stask --quiet -- <sub>`. Every subcommand is Rust
 # code covered by the same workspace lint policy and unit-testable.
-xtask   = ["run", "--package", "xtask", "--quiet", "--"]
+stask   = ["run", "--package", "stask", "--quiet", "--"]
 
-# Low-level primitives used by both xtask and humans.
+# Low-level primitives used by both stask and humans.
 xtest   = ["test",   "--workspace", "--all-targets", "--all-features"]
 xcheck  = ["check",  "--workspace", "--all-targets", "--all-features", "--locked"]
 xclippy = ["clippy", "--workspace", "--all-targets", "--all-features"]

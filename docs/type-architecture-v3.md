@@ -122,7 +122,7 @@ pub enum ExpectedExit {
 
 All snapshot comparisons reuse the existing normalization + variation machinery (normalize.rs) and the same blessing path as `.stderr` (§5, §6).
 
-`Expand` is **not** feature-gated — `expand()` / `Expectation::Expand` are always present. `cargo expand` is provisioned as an installed tool in the `cargo xtask init` bootstrap (not a linked dependency), and its nightly requirement is pay-per-use: incurred only when an `Expand` fixture actually runs. A missing toolchain or tool surfaces as `TestStatus::ExpandFailed`.
+`Expand` is **not** feature-gated — `expand()` / `Expectation::Expand` are always present. `cargo expand` is provisioned as an installed tool in the `cargo stask init` bootstrap (not a linked dependency), and its nightly requirement is pay-per-use: incurred only when an `Expand` fixture actually runs. A missing toolchain or tool surfaces as `TestStatus::ExpandFailed`.
 
 ---
 

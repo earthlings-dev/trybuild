@@ -110,8 +110,8 @@ jobs:
 
       - uses: actions/upload-artifact@v7
         with:
-          name: xtask-windows-gnu
-          path: target/x86_64-pc-windows-gnu/release/xtask.exe
+          name: stask-windows-gnu
+          path: target/x86_64-pc-windows-gnu/release/stask.exe
           retention-days: 7
 
       # The arm64 Windows artifact is built and retained but not smoke-run:
@@ -119,8 +119,8 @@ jobs:
       # x86_64 smoke job already proves the zig-link pattern end to end.
       - uses: actions/upload-artifact@v7
         with:
-          name: xtask-windows-gnullvm-arm64
-          path: target/aarch64-pc-windows-gnullvm/release/xtask.exe
+          name: stask-windows-gnullvm-arm64
+          path: target/aarch64-pc-windows-gnullvm/release/stask.exe
           retention-days: 7
 
   # Proves the zig-linked windows-gnu binary actually runs on Windows — the
@@ -134,7 +134,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@v8
         with:
-          name: xtask-windows-gnu
+          name: stask-windows-gnu
 
       - name: Run the cross-compiled binary natively
-        run: ./xtask.exe --help
+        run: ./stask.exe --help

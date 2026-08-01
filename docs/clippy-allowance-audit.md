@@ -4,14 +4,14 @@ A read-only audit of every inline lint suppression in the repo, judged against *
 
 ## The rule (from your `[workspace.lints.clippy]` meta comment)
 
-> localized `#[allow(clippy::single_call_fn, reason = "...")]` is permitted where a named helper genuinely improves structure. The companion `lint-attrs` xtask still rejects every other `#[allow(...)]` / `#[expect(...)]`.
+> localized `#[allow(clippy::single_call_fn, reason = "...")]` is permitted where a named helper genuinely improves structure. The companion `lint-attrs` stask still rejects every other `#[allow(...)]` / `#[expect(...)]`.
 
 This is a hard binary:
 
 - **Permitted inline:** exactly one form — `#[allow(clippy::single_call_fn, reason = "...")]`, and only where the helper genuinely improves structure.
 - **Rejected inline:** every other `#[allow(...)]` / `#[expect(...)]`, no matter how reasonable its `reason` reads.
 
-`allow_attributes_without_reason = "deny"` forces a `reason` on any suppression that exists; it does **not** sanction adding suppressions. The intended hard gate is the `lint-attrs` xtask — which is **absent from this repo** (no `xtask/` crate; it lives in `strict-test-support-rs`). That absence is why the violations below were able to land: the only thing actually enforcing the rule here is this audit.
+`allow_attributes_without_reason = "deny"` forces a `reason` on any suppression that exists; it does **not** sanction adding suppressions. The intended hard gate is the `lint-attrs` stask — which is **absent from this repo** (no `stask/` crate; it lives in `strict-test-support-rs`). That absence is why the violations below were able to land: the only thing actually enforcing the rule here is this audit.
 
 Out of scope: **config-level** `allow`/`warn` entries (`restriction`, `implicit_return`, `question_mark_used`, `async_fn_in_trait`, the two `warn`s, …) are you *defining the lint set* — turning off lints that contradict denied lints or don't apply. They are policy, not exceptions. They are summarized at the end but are not "allowances" in the sense your rule governs.
 
@@ -79,7 +79,7 @@ The one thing worth your attention at the class level: `single_call_fn` is your 
 
 These are you choosing the lint set; included only so the picture is complete. They are not governed by the "one inline form" rule. Two have comment-quality issues worth a quick fix:
 
-- `allow_attributes` (`Cargo.toml:470`, mirrored in `fuzz/Cargo.toml:376`) — its comment asserts the `lint-attrs` xtask "rejects every other `#[allow]`." **That xtask is not in this repo.** The comment describes enforcement that doesn't exist — which is the root cause of the 14 violations above. Either port the xtask (so the rule is actually enforced) or rewrite the comment to say enforcement is currently manual/by-review.
+- `allow_attributes` (`Cargo.toml:470`, mirrored in `fuzz/Cargo.toml:376`) — its comment asserts the `lint-attrs` stask "rejects every other `#[allow]`." **That stask is not in this repo.** The comment describes enforcement that doesn't exist — which is the root cause of the 14 violations above. Either port the stask (so the rule is actually enforced) or rewrite the comment to say enforcement is currently manual/by-review.
 - `async_fn_in_trait` (`Cargo.toml:177`) — 7 lines of inherited template prose about "service/port/repository/adapter traits" that this synchronous crate does not contain. Inert, but the justification doesn't describe trybuild. Trim or drop.
 - The remaining config `allow`s (`restriction`, `implicit_return`, `semicolon_inside_block`, `separated_literal_suffix`, `self_named_module_files`, `question_mark_used`, `pub_use`, `ref_binding_to_reference`, `blanket_clippy_restriction_lints`) and the `warn`s (`else_if_without_else`, `single_call_fn`, `missing_copy_implementations`) are legitimate definitions; a few of the terse `# contradicts X` one-liners could state which side wins, but none is a rule violation.
 

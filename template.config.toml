@@ -22,12 +22,12 @@ dependencies = [
   "strict-standard",
   "strict-test-support",
   "template-core",
-  "template-xtask",
+  "template-stask",
 ]
 
 [[ecosystems.cargo.update.manifests]]
-path = "xtask/Cargo.toml"
-dependencies = ["template-core", "template-xtask"]
+path = "stask/Cargo.toml"
+dependencies = ["template-core", "template-stask"]
 dev-dependencies = ["strict-test-support"]
 
 [guidance]

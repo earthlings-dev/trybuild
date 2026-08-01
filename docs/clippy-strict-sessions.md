@@ -31,7 +31,7 @@ arr.last().unwrap()    ->  arr.last().expect("…non-empty")  // expect_used is 
 ```
 Put saturating arithmetic **inside** the `.get()` range — the canonical combined form:
 ```rust
-// strict-test-support-rs/xtask/src/lint_attrs.rs:93
+// strict-test-support-rs/stask/src/lint_attrs.rs:93
 haystack.get(i..i.saturating_add(needle.len())) == Some(needle)
 // gen_config_template.rs:131 / badges.rs:262
 haystack.get(start..end).unwrap_or("")
