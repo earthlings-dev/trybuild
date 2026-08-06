@@ -1,3 +1,5 @@
+<!-- Do not edit; generated file. -->
+
 Trybuild
 ========
 

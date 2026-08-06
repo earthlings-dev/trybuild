@@ -23,9 +23,9 @@ export STASK_VIA_JUST := "1"
 default:
     @just --list --unsorted
 
-# Bootstrap toolchains, targets, cargo tools, and the local pre-commit hook.
-init:
-    template init
+# Initialize or advance staged strict ecosystem adoption.
+init *args:
+    template init {{args}}
 
 # Scaffold a workspace crate with `just new <name>` or `just new <name> --bin`.
 new *args:

@@ -55,6 +55,11 @@ pub(in crate::internal) fn get_manifest(manifest_dir: &Directory) -> ProjectResu
 
 /// Reads the workspace's `[workspace]`, `[patch]`, and `[replace]` sections,
 /// rewriting their relative paths to absolute and dropping any `trybuild` entry.
+#[allow(
+  clippy::single_call_fn,
+  reason = "workspace-manifest decoding is the project-synthesis boundary that removes self-edges and absolutizes inherited dependencies, \
+            patches, and replacements"
+)]
 pub(in crate::internal) fn try_get_workspace_manifest(manifest_dir: &Directory) -> error::Result<WorkspaceManifest> {
   let cargo_toml_path = manifest_dir.join("Cargo.toml");
   let manifest_str = fs::read_to_string(cargo_toml_path).map_err(SysError::Io)?;

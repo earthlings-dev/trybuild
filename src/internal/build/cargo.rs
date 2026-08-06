@@ -103,20 +103,7 @@ where
       .into_iter()
       .chain(arguments.into_iter().map(Into::into)),
     );
-    request.current_dir = Some(project.dir.as_ref().to_path_buf());
-    request.environment.extend([
-      EnvironmentChange::Set {
-        name:  "CARGO_TARGET_DIR".into(),
-        value: path!(project.target_dir / "tests" / "trybuild").into_os_string(),
-      },
-      EnvironmentChange::Remove {
-        name: "RUSTFLAGS".into()
-      },
-      EnvironmentChange::Set {
-        name:  "CARGO_INCREMENTAL".into(),
-        value: "0".into(),
-      },
-    ]);
+    configure_project_process(&mut request, project);
     request
   }
 
@@ -124,6 +111,25 @@ where
   fn execute(&self, request: &ProcessRequest) -> Result<ProcessOutput> {
     self.executor.execute(request).map_err(BuildError::Cargo)
   }
+}
+
+/// Apply the generated project's deterministic working directory and process
+/// environment to either a Cargo invocation or a directly executed test bin.
+fn configure_project_process(request: &mut ProcessRequest, project: &Project) {
+  request.current_dir = Some(project.dir.as_ref().to_path_buf());
+  request.environment.extend([
+    EnvironmentChange::Set {
+      name:  "CARGO_TARGET_DIR".into(),
+      value: path!(project.target_dir / "tests" / "trybuild").into_os_string(),
+    },
+    EnvironmentChange::Remove {
+      name: "RUSTFLAGS".into()
+    },
+    EnvironmentChange::Set {
+      name:  "CARGO_INCREMENTAL".into(),
+      value: "0".into(),
+    },
+  ]);
 }
 
 /// Build a production Cargo context from current host observations.
@@ -234,7 +240,7 @@ where
   }
 
   // Check if this Cargo contains https://github.com/rust-lang/cargo/pull/10383
-  let mut keep_going_request = request.clone();
+  let mut keep_going_request = request;
   keep_going_request.arguments.push("--keep-going".into());
   keep_going_request.stdout = OutputPolicy::Discard;
   keep_going_request.stderr = OutputPolicy::Discard;
@@ -353,20 +359,7 @@ where
 )]
 fn built_executable_request(project: &Project, executable: &Path) -> ProcessRequest {
   let mut request = ProcessRequest::new(executable, iter::empty::<OsString>());
-  request.current_dir = Some(project.dir.as_ref().to_path_buf());
-  request.environment.extend([
-    EnvironmentChange::Set {
-      name:  "CARGO_TARGET_DIR".into(),
-      value: path!(project.target_dir / "tests" / "trybuild").into_os_string(),
-    },
-    EnvironmentChange::Remove {
-      name: "RUSTFLAGS".into()
-    },
-    EnvironmentChange::Set {
-      name:  "CARGO_INCREMENTAL".into(),
-      value: "0".into(),
-    },
-  ]);
+  configure_project_process(&mut request, project);
   request.stdout = OutputPolicy::Capture;
   request.stderr = OutputPolicy::Capture;
   request
@@ -549,6 +542,66 @@ mod tests {
       },
       keep_going: KeepGoing::No,
     }
+  }
+
+  /// Build the deterministic Cargo capability used by request-planning tests.
+  fn recording_cargo(recorder: &RecordingEffects, inherited_rustflags: Option<OsString>) -> CargoContext<RecordingEffects> {
+    CargoContext {
+      executor: recorder.clone(),
+      program: OsString::from("cargo-fixture"),
+      inherited_rustflags,
+    }
+  }
+
+  /// Verify the shared generated-project working directory and deterministic
+  /// environment without reusing the production configurator.
+  fn ensure_project_process_context(request: &ProcessRequest, project: &Project) -> StdResult<(), TestFailure> {
+    let target_dir = ensure_some(
+      request.environment.first(),
+      "the first environment change must select the target directory",
+    )?;
+    let removed_rustflags = ensure_some(
+      request.environment.get(1),
+      "the second environment change must remove inherited Rust flags",
+    )?;
+    let incremental = ensure_some(
+      request.environment.get(2),
+      "the third environment change must disable incremental compilation",
+    )?;
+
+    ensure_all(&[
+      (
+        request.current_dir.as_deref() == Some(project.dir.as_ref()),
+        "project processes must execute inside the generated project",
+      ),
+      (
+        request.environment.len() == 3,
+        "project processes must emit exactly the deterministic project environment",
+      ),
+      (
+        target_dir
+          == &EnvironmentChange::Set {
+            name:  "CARGO_TARGET_DIR".into(),
+            value: path!(project.target_dir / "tests" / "trybuild").into_os_string(),
+          },
+        "project processes must isolate generated artifacts under trybuild's target directory",
+      ),
+      (
+        removed_rustflags
+          == &EnvironmentChange::Remove {
+            name: "RUSTFLAGS".into()
+          },
+        "project processes must remove inherited Rust flags after encoding them in Cargo config",
+      ),
+      (
+        incremental
+          == &EnvironmentChange::Set {
+            name:  "CARGO_INCREMENTAL".into(),
+            value: "0".into(),
+          },
+        "project processes must disable incremental compilation",
+      ),
+    ])
   }
 
   fn write_project(project: &Project, main_rs: &str) -> StdResult<(), TestFailure> {
@@ -766,11 +819,7 @@ path = "main.rs"
     let project = project(&fixture, "demo-tests", Selected::CompileFailOnly, Some(vec!["extra".to_owned()]));
     let recorder = RecordingEffects::default();
     recorder.queue_process_result(Ok(process_output(0, b"json".to_vec(), Vec::new())?));
-    let cargo = CargoContext {
-      executor:            recorder.clone(),
-      program:             OsString::from("cargo-fixture"),
-      inherited_rustflags: Some(OsString::from("-C instrument-coverage")),
-    };
+    let cargo = recording_cargo(&recorder, Some(OsString::from("-C instrument-coverage")));
 
     let output = ensure_ok_source(
       build_test_with(&cargo, &project, &Name("case-name".to_owned())),
@@ -798,36 +847,27 @@ path = "main.rs"
       OsString::from("--color=never"),
       OsString::from("--message-format=json"),
     ]);
-    let expected = ProcessRequest {
-      program:     OsString::from("cargo-fixture"),
-      arguments:   expected_arguments,
-      current_dir: Some(project.dir.as_ref().to_path_buf()),
-      environment: vec![
-        EnvironmentChange::Set {
-          name:  "CARGO_TARGET_DIR".into(),
-          value: path!(project.target_dir / "tests" / "trybuild").into_os_string(),
-        },
-        EnvironmentChange::Remove {
-          name: "RUSTFLAGS".into()
-        },
-        EnvironmentChange::Set {
-          name:  "CARGO_INCREMENTAL".into(),
-          value: "0".into(),
-        },
-      ],
-      stdout:      OutputPolicy::Capture,
-      stderr:      OutputPolicy::Capture,
-    };
+    ensure_project_process_context(&request, &project)?;
 
-    ensure(output.stdout == b"json", "the process outcome bytes must be returned unchanged")?;
-    ensure(
-      recorder.process_requests().len() == 1,
-      "a single diagnostic build must execute exactly one request",
-    )?;
-    ensure(
-      request == expected,
-      "single-build planning must pin program, argument order, directory, environment, and output policy",
-    )
+    ensure_all(&[
+      (output.stdout == b"json", "the process outcome bytes must be returned unchanged"),
+      (
+        recorder.process_requests().len() == 1,
+        "a single diagnostic build must execute exactly one request",
+      ),
+      (
+        request.program == "cargo-fixture",
+        "single-build planning must select the injected Cargo program",
+      ),
+      (
+        request.arguments == expected_arguments,
+        "single-build planning must preserve the complete Cargo argument grammar and order",
+      ),
+      (
+        request.stdout == OutputPolicy::Capture && request.stderr == OutputPolicy::Capture,
+        "single-build planning must capture both output streams",
+      ),
+    ])
   }
 
   #[test]
@@ -836,11 +876,7 @@ path = "main.rs"
     let project = project(&fixture, "demo-tests", Selected::CompileFailOnly, None);
     let recorder = RecordingEffects::default();
     recorder.queue_process_result(Ok(process_output(101, b"compiler-json".to_vec(), b"compiler-stderr".to_vec())?));
-    let cargo = CargoContext {
-      executor:            recorder.clone(),
-      program:             OsString::from("cargo-fixture"),
-      inherited_rustflags: None,
-    };
+    let cargo = recording_cargo(&recorder, None);
 
     let output = ensure_ok_source(
       build_all_tests_with(&cargo, &project),
@@ -881,11 +917,7 @@ path = "main.rs"
     )?;
     let recorder = RecordingEffects::default();
     recorder.queue_process_result(Ok(process_output(101, Vec::new(), b"dependency failed".to_vec())?));
-    let cargo = CargoContext {
-      executor:            recorder.clone(),
-      program:             OsString::from("cargo-fixture"),
-      inherited_rustflags: None,
-    };
+    let cargo = recording_cargo(&recorder, None);
 
     ensure(
       build_dependencies_with(&cargo, &mut project).is_err(),
@@ -915,11 +947,7 @@ path = "main.rs"
       recorder.queue_process_result(Ok(process_output(0, Vec::new(), Vec::new())?));
       recorder.queue_process_result(Ok(process_output(probe_code, Vec::new(), Vec::new())?));
       recorder.queue_process_result(Ok(process_output(0, Vec::new(), Vec::new())?));
-      let cargo = CargoContext {
-        executor:            recorder.clone(),
-        program:             OsString::from("cargo-fixture"),
-        inherited_rustflags: None,
-      };
+      let cargo = recording_cargo(&recorder, None);
 
       ensure_ok_source(
         build_dependencies_with(&cargo, &mut project),
@@ -959,11 +987,7 @@ path = "main.rs"
       fixture.path().display(),
     );
     recorder.queue_process_result(Ok(process_output(0, metadata_json.into_bytes(), Vec::new())?));
-    let cargo = CargoContext {
-      executor:            recorder.clone(),
-      program:             OsString::from("cargo-fixture"),
-      inherited_rustflags: None,
-    };
+    let cargo = recording_cargo(&recorder, None);
 
     let run_output = ensure_ok_source(
       run_test_with(&cargo, &project, &Name("demo-tests".to_owned()), None),
@@ -977,6 +1001,7 @@ path = "main.rs"
       .into_iter()
       .map(OsString::from)
       .collect::<Vec<_>>();
+    ensure_project_process_context(run_request, &project)?;
 
     ensure(
       run_output.status.code() == Some(7),

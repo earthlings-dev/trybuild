@@ -5,10 +5,7 @@
 # in the justfile.
 
 [alias]
-# Workspace automation lives in the `stask` crate. `cargo stask <sub>` expands
-# to `cargo run --package stask --quiet -- <sub>`. Every subcommand is Rust
-# code covered by the same workspace lint policy and unit-testable.
-stask   = ["run", "--package", "stask", "--quiet", "--"]
+stask = ["run", "--package", "stask", "--quiet", "--"]
 
 # Low-level primitives used by both stask and humans.
 xtest   = ["test",   "--workspace", "--all-targets", "--all-features"]

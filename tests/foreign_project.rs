@@ -10,6 +10,7 @@ mod tests {
   use std::path::Path;
 
   use strict_standard::EnvironmentChange;
+  use strict_standard::ProcessRequest;
   use strict_test_support::Expect;
   use strict_test_support::TempDir;
   use strict_test_support::TestFailure;
@@ -42,6 +43,22 @@ mod tests {
     )
   }
 
+  /// Point one ignored child invocation at its synthetic foreign crate and
+  /// isolated target directory.
+  fn configure_foreign_child(request: &mut ProcessRequest, crate_root: &Path, target_dir: &Path) {
+    request.current_dir = Some(crate_root.to_path_buf());
+    request.environment.extend([
+      EnvironmentChange::Set {
+        name:  "CARGO_MANIFEST_DIR".into(),
+        value: crate_root.as_os_str().to_os_string(),
+      },
+      EnvironmentChange::Set {
+        name:  "CARGO_TARGET_DIR".into(),
+        value: target_dir.as_os_str().to_os_string(),
+      },
+    ]);
+  }
+
   #[test]
   fn try_run_sets_up_foreign_projects_and_surfaces_dependency_failures() -> Result<(), TestFailure> {
     let lock_crate = TempDir::new("foreign-lock")?;
@@ -49,17 +66,7 @@ mod tests {
     let lock_target = lock_crate.child("target-root");
     let generated_lockfile = lock_target.join("tests/trybuild/trybuild-foreign-lock/Cargo.lock");
     let lockfile_child = capture_ignored_test_with("tests::lockfile_generation_child", |request| {
-      request.current_dir = Some(lock_crate.path().to_path_buf());
-      request.environment.extend([
-        EnvironmentChange::Set {
-          name:  "CARGO_MANIFEST_DIR".into(),
-          value: lock_crate.path().as_os_str().to_os_string(),
-        },
-        EnvironmentChange::Set {
-          name:  "CARGO_TARGET_DIR".into(),
-          value: lock_target.as_os_str().to_os_string(),
-        },
-      ]);
+      configure_foreign_child(request, lock_crate.path(), &lock_target);
     })?;
 
     let broken_crate = TempDir::new("foreign-broken")?;
@@ -70,17 +77,7 @@ mod tests {
     )?;
     let broken_target = broken_crate.child("target-root");
     let dependency_child = capture_ignored_test_with("tests::dependency_build_failure_child", |request| {
-      request.current_dir = Some(broken_crate.path().to_path_buf());
-      request.environment.extend([
-        EnvironmentChange::Set {
-          name:  "CARGO_MANIFEST_DIR".into(),
-          value: broken_crate.path().as_os_str().to_os_string(),
-        },
-        EnvironmentChange::Set {
-          name:  "CARGO_TARGET_DIR".into(),
-          value: broken_target.as_os_str().to_os_string(),
-        },
-      ]);
+      configure_foreign_child(request, broken_crate.path(), &broken_target);
     })?;
 
     ensure_all(&[

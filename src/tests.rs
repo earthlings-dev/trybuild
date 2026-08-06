@@ -1,5 +1,3 @@
-use std::path::Path;
-
 macro_rules! test_normalize {
     // Select an overriding literal when one is supplied, otherwise fall back to
     // the default. Returning a single literal avoids leaving the unused default
@@ -10,6 +8,8 @@ macro_rules! test_normalize {
     (@pick $default:literal, $override_value:literal) => {
         $override_value
     };
+    // This macro expands inside `automod` child modules. Keep every emitted
+    // non-prelude name fully qualified so fixture modules need no imports.
     (
         $(DIR=$dir:literal)?
         $(WORKSPACE=$workspace:literal)?
@@ -21,7 +21,7 @@ macro_rules! test_normalize {
         fn test() -> Result<(), strict_test_support::TestFailure> {
             let context = crate::internal::diagnostics::normalize::Context {
                 krate: "trybuild000",
-                input_file: Path::new(test_normalize!(@pick "tests/ui/error.rs", $($input)?)),
+                input_file: std::path::Path::new(test_normalize!(@pick "tests/ui/error.rs", $($input)?)),
                 source_dir: &crate::internal::sys::directory::Directory::new(test_normalize!(@pick "/git/trybuild/test_suite", $($dir)?)),
                 workspace: &crate::internal::sys::directory::Directory::new(test_normalize!(@pick "/git/trybuild", $($workspace)?)),
                 target_dir: &crate::internal::sys::directory::Directory::new(test_normalize!(@pick "/git/trybuild/target", $($target)?)),
@@ -35,7 +35,7 @@ macro_rules! test_normalize {
             let preferred = variations.preferred();
             strict_test_support::ensure_snapshot(
                 preferred,
-                Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/src/tests/snapshots/", $name, ".snap")),
+                std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/src/tests/snapshots/", $name, ".snap")),
                 "normalized diagnostic matches the expected snapshot",
             )
         }

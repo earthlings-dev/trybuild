@@ -1,4 +1,4 @@
-schema-version = "0.1.0"
+schema-version = "0.3.1"
 
 [template]
 id = "rust-template"
@@ -8,60 +8,8 @@ kind = "git"
 url = "https://github.com/takumi-earth/rust-template.git"
 branch = "main"
 
-[ecosystems]
-order = ["cargo"]
-
 [ecosystems.cargo.layout]
 kind = "flat"
-
-[ecosystems.cargo.update]
-lockfile-refresh = "when-managed-dependencies-change"
-
-[ecosystems.cargo.update.workspace]
-dependencies = [
-  "strict-standard",
-  "strict-test-support",
-  "template-core",
-  "template-stask",
-]
-
-[[ecosystems.cargo.update.manifests]]
-path = "stask/Cargo.toml"
-dependencies = ["template-core", "template-stask"]
-dev-dependencies = ["strict-test-support"]
-
-[guidance]
-
-[guidance.source]
-kind = "git"
-url = "https://github.com/earthlings-dev/agents-md-rs.git"
-branch = "main"
-fragments-root = "fragments"
-
-[managed-children]
-preserve-unknown = true
-
-[[managed-children.repositories]]
-id = "agent-plugin.rust-template-core"
-path = ".agents/plugins/rust-template-core"
-url = "https://github.com/earthlings-dev/agentic-plugin-rust-template.git"
-branch = "main"
-
-[[managed-children.repositories]]
-id = "agent-plugin.strict-adoption"
-path = ".agents/plugins/strict-adoption"
-url = "https://github.com/earthlings-dev/agentic-plugin-strict-adoption.git"
-branch = "main"
-
-[[agent-plugins.plugins]]
-id = "rust-template-core"
-path = ".agents/plugins/rust-template-core"
-source = { kind = "git", url = "https://github.com/earthlings-dev/agentic-plugin-rust-template.git", branch = "main" }
-
-[[agent-plugins.plugins]]
-id = "strict-adoption"
-path = ".agents/plugins/strict-adoption"
-source = { kind = "git", url = "https://github.com/earthlings-dev/agentic-plugin-strict-adoption.git", branch = "main" }
 
 [deviations.justfile]
 
@@ -69,3 +17,7 @@ source = { kind = "git", url = "https://github.com/earthlings-dev/agentic-plugin
 file = "justfile"
 name = "x"
 reason = "strict-trybuild retains a repository-specific extension seam while standard workflows use the installed template binary"
+
+[adoption]
+completed-stage = "strict"
+resolution = "live"
