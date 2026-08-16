@@ -42,6 +42,7 @@ allow-git = [
   "https://github.com/earthlings-dev/strict-standard-rs.git",
   "https://github.com/earthlings-dev/strict-test-support-rs.git",
   "https://github.com/earthlings-dev/template-rs.git",
+  "https://github.com/microsoft/windows-rs.git",
   "https://github.com/strict-rs/strict-bpaf.git",
   "https://github.com/strict-rs/strict-chrono.git",
   "https://github.com/strict-rs/strict-thiserror.git",

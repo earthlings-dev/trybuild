@@ -15,7 +15,7 @@ keywords = ["macros", "testing", "dev-dependencies"]
 license = "MIT OR Apache-2.0"
 license-file = "LICENSE-APACHE"
 repository = "https://github.com/strict-rs/strict-trybuild"
-rust-version = "1.96"
+rust-version = "1.97"
 readme       = "README.md"
 publish = false
 
@@ -79,7 +79,7 @@ strict-standard = { version = "0.1.0", git = "https://github.com/earthlings-dev/
 # Product dependencies shared with the root package.
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-thiserror = {  version = "2.1.0", git = "https://github.com/strict-rs/strict-thiserror.git", branch = "upgrade" }
+thiserror = { version = "2.1.0", git = "https://github.com/strict-rs/strict-thiserror.git", branch = "upgrade" }
 toml = "1.1"
 parking_lot = "0.12"
 
