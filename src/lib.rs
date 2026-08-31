@@ -233,7 +233,7 @@
 //! components = ["rust-src"]
 //! ```
 
-#![doc(html_root_url = "https://docs.rs/trybuild/1.0.117")]
+#![doc(html_root_url = "https://docs.rs/trybuild/1.0.120")]
 
 mod internal;
 

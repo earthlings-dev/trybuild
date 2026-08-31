@@ -47,4 +47,16 @@ pub(in crate::internal) struct PathDependency {
   pub(in crate::internal) name:            String,
   /// The canonicalized path to the dependency on disk.
   pub(in crate::internal) normalized_path: Directory,
+  /// Whether this dependency participated in historical path normalization or
+  /// was added by the expanded manifest-table discovery.
+  pub(in crate::internal) class:           PathDependencyClass,
+}
+
+/// The compatibility class of a discovered path dependency.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub(in crate::internal) enum PathDependencyClass {
+  /// A root `[dependencies]` entry recognized by the original normalizer.
+  LegacyTopLevel,
+  /// A root dev dependency or target-specific dependency added in `1.0.120`.
+  Additional,
 }

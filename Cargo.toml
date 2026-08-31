@@ -5,7 +5,7 @@ resolver = "3"
 
 # ─── Default metadata inherited by every member crate ───────────────────────
 [workspace.package]
-version = "1.0.117"
+version = "1.0.120"
 authors = ["David Tolnay <dtolnay@gmail.com>", "Takumi Shimada <hello@takumi.earth>"]
 categories = ["development-tools::testing"]
 description = "Test harness for ui tests of compiler diagnostics"
@@ -32,6 +32,10 @@ keywords.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
+
+[[test]]
+name = "build_script"
+path = "build.rs"
 
 [features]
 # Experimental: highlight the diff between the expected and actual compiler

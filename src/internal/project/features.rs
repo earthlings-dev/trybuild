@@ -9,6 +9,7 @@ use std::env;
 use std::error::Error;
 use std::ffi::OsStr;
 use std::fs;
+use std::path::Path;
 use std::path::PathBuf;
 
 use serde::de;
@@ -47,16 +48,22 @@ struct Build {
   features: Vec<String>,
 }
 
-/// Recovers the active feature set from the running test binary's fingerprint.
-///
-/// Derives the binary's hash from its own path, finds the matching
-/// `target/.../.fingerprint/*-HASH/*.json`, and reads the feature list from it.
-/// Returns [`Ignored`] at the first sign the layout does not match expectations.
+/// Recovers the active feature set from the running test binary's fingerprint,
+/// trying Cargo's legacy layout before its new build-directory layout.
 #[allow(
   clippy::single_call_fn,
   reason = "fingerprint decoding is the fallible Cargo-layout interpreter beneath the best-effort feature-discovery boundary"
 )]
 fn find_from(test_binary: &OsStr) -> Result<Vec<String>, Ignored> {
+  find_from_legacy_layout(test_binary).or_else(|_legacy_error| find_from_new_layout(test_binary))
+}
+
+/// Reads features from Cargo's legacy `target/<profile>/.fingerprint` layout.
+#[allow(
+  clippy::single_call_fn,
+  reason = "the named legacy-layout reader preserves Cargo layout identity and the orchestrator's legacy-first fallback order"
+)]
+fn find_from_legacy_layout(test_binary: &OsStr) -> Result<Vec<String>, Ignored> {
   // This will look something like:
   //   /path/to/crate_name/target/debug/deps/test_name-HASH
   // The hash at the end is ascii so not lossy, rest of conversion doesn't
@@ -73,7 +80,7 @@ fn find_from(test_binary: &OsStr) -> Result<Vec<String>, Ignored> {
     return Err(Ignored);
   }
 
-  let binary_path = PathBuf::from(&test_binary);
+  let binary_path = PathBuf::from(test_binary);
 
   // Feature selection is saved in:
   //   /path/to/crate_name/target/debug/.fingerprint/*-HASH/*-HASH.json
@@ -97,8 +104,32 @@ fn find_from(test_binary: &OsStr) -> Result<Vec<String>, Ignored> {
     return Err(Ignored);
   }
 
+  read_features(hash_matches.first().ok_or(Ignored)?)
+}
+
+/// Reads features from Cargo's new
+/// `target/<profile>/build/<crate>/<hash>/fingerprint` layout.
+#[allow(
+  clippy::single_call_fn,
+  reason = "the named new-layout reader preserves Cargo layout identity and the orchestrator's explicit fallback boundary"
+)]
+fn find_from_new_layout(test_binary: &OsStr) -> Result<Vec<String>, Ignored> {
+  // The binary resembles:
+  //   target/debug/build/$CRATE/$HASH/out/test_name-HASH
+  let binary_path = PathBuf::from(test_binary);
+  let out_dir = binary_path.parent().ok_or(Ignored)?;
+  if out_dir.file_name() != Some(OsStr::new("out")) {
+    return Err(Ignored);
+  }
+  let build_dir = out_dir.parent().ok_or(Ignored)?;
+  read_features(&build_dir.join("fingerprint"))
+}
+
+/// Reads the single regular JSON file in `fingerprint_dir` and decodes its
+/// embedded feature list.
+fn read_features(fingerprint_dir: &Path) -> Result<Vec<String>, Ignored> {
   let mut json_matches = Vec::new();
-  for child in hash_matches.first().ok_or(Ignored)?.read_dir()? {
+  for child in fingerprint_dir.read_dir()? {
     let entry = child?;
     let is_file = entry.file_type()?.is_file();
     let is_json = entry.path().extension() == Some(OsStr::new("json"));
@@ -110,8 +141,8 @@ fn find_from(test_binary: &OsStr) -> Result<Vec<String>, Ignored> {
   if json_matches.len() != 1 {
     return Err(Ignored);
   }
-
-  let build_json = fs::read_to_string(json_matches.first().ok_or(Ignored)?)?;
+  let build_json_path = json_matches.first().ok_or(Ignored)?;
+  let build_json = fs::read_to_string(build_json_path)?;
   let build: Build = serde_json::from_str(&build_json)?;
   Ok(build.features)
 }
@@ -157,10 +188,26 @@ mod tests {
     root.join("target/debug/deps").join(format!("test{suffix}"))
   }
 
+  fn new_build_dir(root: &Path) -> PathBuf {
+    root.join("target/debug/build/trybuild/unit-hash")
+  }
+
+  fn new_binary_path(root: &Path) -> PathBuf {
+    new_build_dir(root).join("out").join(format!("test{HASH}"))
+  }
+
+  fn write_fingerprint(fingerprint: &Path, json_name: &str, body: &str) -> StdResult<(), TestFailure> {
+    ensure_ok_source(fs::create_dir_all(fingerprint), "fingerprint directory can be created")?;
+    ensure_ok_source(fs::write(fingerprint.join(json_name), body), "fingerprint JSON can be written")
+  }
+
   fn write_features(root: &Path, package: &str, json_name: &str, body: &str) -> StdResult<(), TestFailure> {
     let fingerprint = root.join("target/debug/.fingerprint").join(format!("{package}{HASH}"));
-    ensure_ok_source(fs::create_dir_all(&fingerprint), "fingerprint directory can be created")?;
-    ensure_ok_source(fs::write(fingerprint.join(json_name), body), "fingerprint JSON can be written")
+    write_fingerprint(&fingerprint, json_name, body)
+  }
+
+  fn write_new_features(root: &Path, json_name: &str, body: &str) -> StdResult<(), TestFailure> {
+    write_fingerprint(&new_build_dir(root).join("fingerprint"), json_name, body)
   }
 
   #[test]
@@ -185,6 +232,39 @@ mod tests {
         "the test fixture uses a cargo-style binary hash suffix",
       ),
     ])
+  }
+
+  #[test]
+  fn find_from_falls_back_to_the_new_build_directory_layout() -> StdResult<(), TestFailure> {
+    let fixture = TempDir::new("features-new-layout")?;
+    write_new_features(fixture.path(), "trybuild.json", r#"{"features":"[\"new-layout\",\"serde\"]"}"#)?;
+
+    let found = ensure_some(
+      find_from(new_binary_path(fixture.path()).as_os_str()).ok(),
+      "feature detection falls back to the new Cargo layout",
+    )?;
+
+    ensure(
+      found == ["new-layout", "serde"],
+      "the new-layout fingerprint feature list is decoded",
+    )
+  }
+
+  #[test]
+  fn find_from_prefers_legacy_fingerprint_data_when_both_layouts_are_present() -> StdResult<(), TestFailure> {
+    let fixture = TempDir::new("features-legacy-first")?;
+    let legacy_fingerprint = new_build_dir(fixture.path())
+      .join(".fingerprint")
+      .join(format!("trybuild{HASH}"));
+    write_fingerprint(&legacy_fingerprint, "legacy.json", r#"{"features":"[\"legacy\"]"}"#)?;
+    write_new_features(fixture.path(), "new.json", r#"{"features":"[\"new\"]"}"#)?;
+
+    let found = ensure_some(
+      find_from(new_binary_path(fixture.path()).as_os_str()).ok(),
+      "feature detection reads one of the available layouts",
+    )?;
+
+    ensure(found == ["legacy"], "legacy fingerprint data wins while both layouts are available")
   }
 
   #[test]
@@ -231,6 +311,61 @@ mod tests {
       find_from(binary_path(fixture.path(), HASH).as_os_str()).is_err(),
       "feature detection rejects malformed fingerprint JSON",
     )
+  }
+
+  #[test]
+  fn new_layout_rejects_missing_ambiguous_and_malformed_json() -> StdResult<(), TestFailure> {
+    let no_json = TempDir::new("features-new-no-json")?;
+    let no_json_fingerprint = new_build_dir(no_json.path()).join("fingerprint");
+    ensure_ok_source(
+      fs::create_dir_all(no_json_fingerprint.join("directory.json")),
+      "json-named directory can be created",
+    )?;
+    ensure_ok_source(
+      fs::write(no_json_fingerprint.join("notes.txt"), "not fingerprint data"),
+      "non-json fingerprint noise can be written",
+    )?;
+
+    let ambiguous = TempDir::new("features-new-ambiguous")?;
+    write_new_features(ambiguous.path(), "first.json", r#"{"features":"[]"}"#)?;
+    write_new_features(ambiguous.path(), "second.json", r#"{"features":"[]"}"#)?;
+
+    let malformed = TempDir::new("features-new-malformed")?;
+    write_new_features(malformed.path(), "malformed.json", "{not json")?;
+
+    ensure_all(&[
+      (
+        find_from(new_binary_path(no_json.path()).as_os_str()).is_err(),
+        "new-layout feature detection rejects directories without a regular JSON file",
+      ),
+      (
+        find_from(new_binary_path(ambiguous.path()).as_os_str()).is_err(),
+        "new-layout feature detection rejects multiple JSON files",
+      ),
+      (
+        find_from(new_binary_path(malformed.path()).as_os_str()).is_err(),
+        "new-layout feature detection rejects malformed JSON",
+      ),
+    ])
+  }
+
+  #[test]
+  fn new_layout_ignores_unrelated_entries_around_one_fingerprint() -> StdResult<(), TestFailure> {
+    let fixture = TempDir::new("features-new-noise")?;
+    let fingerprint = new_build_dir(fixture.path()).join("fingerprint");
+    write_new_features(fixture.path(), "trybuild.json", r#"{"features":"[\"diff\"]"}"#)?;
+    ensure_ok_source(fs::write(fingerprint.join("notes.txt"), "noise"), "non-json file can be written")?;
+    ensure_ok_source(
+      fs::create_dir_all(fingerprint.join("directory.json")),
+      "json-named directory can be created",
+    )?;
+
+    let found = ensure_some(
+      find_from(new_binary_path(fixture.path()).as_os_str()).ok(),
+      "new-layout feature detection ignores unrelated entries",
+    )?;
+
+    ensure(found == ["diff"], "the one regular JSON fingerprint remains authoritative")
   }
 
   #[test]

@@ -2,10 +2,12 @@ use std::path::PathBuf;
 
 use strict_test_support::TestFailure;
 use strict_test_support::ensure_all;
+use strict_test_support::ensure_eq;
 
 use super::normalize;
 use super::normalize::Context;
 use crate::internal::model::PathDependency;
+use crate::internal::model::PathDependencyClass;
 use crate::internal::sys::directory::Directory;
 
 struct Fixture {
@@ -27,6 +29,7 @@ impl Fixture {
       path_deps:  vec![PathDependency {
         name:            "helper".to_owned(),
         normalized_path: dep_dir,
+        class:           PathDependencyClass::LegacyTopLevel,
       }],
     }
   }
@@ -114,6 +117,99 @@ fn location_rewrites_cover_source_workspace_path_deps_registry_and_out_dir() -> 
     (
       rendered.contains("not-an-out-dir/out/generated.rs"),
       "non-matching output directory components are left alone",
+    ),
+  ])
+}
+
+#[test]
+fn custom_registry_normalization_is_appended_and_preserves_historical_output() -> Result<(), TestFailure> {
+  let fixture = Fixture::new();
+  let input = concat!(
+    "error: custom registry\n",
+    "--> /home/me/.cargo/registry/src/my-cdn.example.com-abcdef1234567890/demo-1.2.3/src/lib.rs:4:5\n",
+  );
+  let variations = normalize::diagnostics(input, &fixture.context());
+  let preferred = variations.preferred();
+
+  ensure_all(&[
+    (
+      preferred.contains("--> $CARGO/demo-$VERSION/src/lib.rs"),
+      "hyphenated custom registry names normalize in the preferred variation",
+    ),
+    (
+      variations.any(|candidate| candidate == input),
+      "a variation from before custom-registry normalization still accepts the historical output",
+    ),
+    (
+      !preferred.contains("my-cdn.example.com"),
+      "the preferred variation removes the custom registry identity",
+    ),
+  ])
+}
+
+#[test]
+fn malformed_registry_paths_remain_unchanged() -> Result<(), TestFailure> {
+  let fixture = Fixture::new();
+  let input = concat!(
+    "error: malformed registries\n",
+    "--> /cargo/registry/src/custom-abcdef123456789/demo/src/lib.rs:1:2\n",
+    "--> /cargo/registry/src/custom-ABCDEF1234567890/demo/src/lib.rs:3:4\n",
+    "--> /cargo/registry/src/custom-abcdef123456789g/demo/src/lib.rs:5:6\n",
+    "--> /cargo/registry/src/-abcdef1234567890/demo/src/lib.rs:7:8\n",
+    "--> /cargo/registry/src/custom-abcdef1234567890\n",
+    "--> /cargo/registry/source/custom-abcdef1234567890/demo/src/lib.rs:9:10\n",
+  );
+  let rendered = fixture.preferred(input);
+
+  ensure_eq(
+    &rendered.as_str(),
+    &input,
+    "short, uppercase, nonhex, nameless, incomplete, and non-registry paths remain unchanged",
+  )
+}
+
+#[test]
+fn expanded_path_dependencies_choose_longest_match_and_keep_first_tie_and_historical_match() -> Result<(), TestFailure> {
+  let mut fixture = Fixture::new();
+  fixture.path_deps = vec![
+    PathDependency {
+      name:            "parent".to_owned(),
+      normalized_path: Directory::new("/vendor/parent"),
+      class:           PathDependencyClass::LegacyTopLevel,
+    },
+    PathDependency {
+      name:            "nested_first".to_owned(),
+      normalized_path: Directory::new("/vendor/parent/nested"),
+      class:           PathDependencyClass::Additional,
+    },
+    PathDependency {
+      name:            "nested_second".to_owned(),
+      normalized_path: Directory::new("/vendor/parent/nested"),
+      class:           PathDependencyClass::Additional,
+    },
+  ];
+  let variations = normalize::diagnostics(
+    "error: nested\n--> /vendor/parent/nested/src/lib.rs:1:2\n--> /vendor/parentish/src/lib.rs:3:4\n",
+    &fixture.context(),
+  );
+  let preferred = variations.preferred();
+
+  ensure_all(&[
+    (
+      preferred.contains("--> $NESTED_FIRST/src/lib.rs"),
+      "the expanded stage chooses the first of the longest matching dependency roots",
+    ),
+    (
+      !preferred.contains("$NESTED_SECOND"),
+      "a later equal-length dependency root does not replace the first",
+    ),
+    (
+      variations.any(|candidate| candidate.contains("--> $PARENT/nested/src/lib.rs")),
+      "historical variations preserve first-match normalization over legacy root dependencies",
+    ),
+    (
+      preferred.contains("/vendor/parentish/src/lib.rs"),
+      "a shared textual prefix without a directory boundary does not match",
     ),
   ])
 }

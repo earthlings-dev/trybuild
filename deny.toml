@@ -45,6 +45,9 @@ allow-git = [
   "https://github.com/microsoft/windows-rs.git",
   "https://github.com/strict-rs/strict-bpaf.git",
   "https://github.com/strict-rs/strict-chrono.git",
+  "https://github.com/strict-rs/strict-logos.git",
+  "https://github.com/strict-rs/strict-rowan.git",
+  "https://github.com/strict-rs/strict-taplo.git",
   "https://github.com/strict-rs/strict-thiserror.git",
 ]
 

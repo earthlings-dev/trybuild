@@ -38,6 +38,7 @@ use crate::internal::error;
 use crate::internal::model::Expected;
 use crate::internal::model::Name;
 use crate::internal::model::PathDependency;
+use crate::internal::model::PathDependencyClass;
 use crate::internal::model::Test;
 use crate::internal::outcome::CaseReport;
 use crate::internal::outcome::Outcome;
@@ -330,22 +331,35 @@ fn prepare(tests: &[ExpandedTest], update: Update) -> error::Result<Project> {
   reason = "path-dependency selection excludes workspace members and canonicalizes only external dependencies for diagnostic normalization"
 )]
 fn path_dependencies_of(source_manifest: &dependencies::Manifest, packages: &[PackageMetadata]) -> Vec<PathDependency> {
-  source_manifest
-    .dependencies
-    .iter()
-    .filter_map(|(name, dep)| {
-      let path = dep.path.as_ref()?;
-      if packages.iter().any(|pkg| &pkg.name == name) {
+  let mut path_dependencies = Vec::new();
+  let mut collect = |dependency_table: &Map<String, Dependency>, class: PathDependencyClass| {
+    for (name, dependency) in dependency_table {
+      let Some(path) = dependency.path.as_ref() else {
+        continue;
+      };
+      if packages.iter().any(|package| &package.name == name) {
         // Skip path dependencies coming from the workspace itself.
-        None
-      } else {
-        Some(PathDependency {
-          name:            name.clone(),
-          normalized_path: path.canonicalize().ok()?,
-        })
+        continue;
       }
-    })
-    .collect()
+      let Ok(normalized_path) = path.canonicalize() else {
+        continue;
+      };
+      path_dependencies.push(PathDependency {
+        name: name.clone(),
+        normalized_path,
+        class,
+      });
+    }
+  };
+
+  collect(&source_manifest.dependencies, PathDependencyClass::LegacyTopLevel);
+  collect(&source_manifest.dev_dependencies, PathDependencyClass::Additional);
+  for target in source_manifest.target.values() {
+    collect(&target.dependencies, PathDependencyClass::Additional);
+    collect(&target.dev_dependencies, PathDependencyClass::Additional);
+  }
+
+  path_dependencies
 }
 
 /// Drops active feature names that the generated manifest does not define.
@@ -1049,47 +1063,95 @@ mod tests {
   }
 
   #[test]
-  fn path_dependencies_of_keeps_external_canonical_paths() -> StdResult<(), TestFailure> {
+  fn path_dependencies_of_collects_every_table_with_classification_and_exclusions() -> StdResult<(), TestFailure> {
     let fixture = TempDir::new("path-deps")?;
-    let external = fixture.child("external");
-    let workspace = fixture.child("workspace");
-    fs::create_dir_all(&external).map_err(|error| TestFailure::Caused {
-      context: "create external dependency directory",
-      source:  Box::new(error),
-    })?;
-    fs::create_dir_all(&workspace).map_err(|error| TestFailure::Caused {
-      context: "create workspace dependency directory",
-      source:  Box::new(error),
-    })?;
+    let legacy_external = fixture.child("legacy-external");
+    let dev_external = fixture.child("dev-external");
+    let target_external = fixture.child("target-external");
+    let target_dev_external = fixture.child("target-dev-external");
+    for path in [&legacy_external, &dev_external, &target_external, &target_dev_external] {
+      ensure_ok_source(fs::create_dir_all(path), "external dependency directory can be created")?;
+    }
 
     let mut manifest = dependencies::Manifest::default();
-    let _external = manifest.dependencies.insert("external".to_owned(), dependency_path(&external));
-    let _workspace = manifest
+    let _legacy_external = manifest
       .dependencies
-      .insert("workspace".to_owned(), dependency_path(&workspace));
-    let _missing = manifest
+      .insert("legacy_external".to_owned(), dependency_path(&legacy_external));
+    let _legacy_workspace = manifest
       .dependencies
-      .insert("missing".to_owned(), dependency_path(fixture.child("missing")));
-    let packages = [PackageMetadata {
-      name:          "workspace".to_owned(),
+      .insert("legacy_workspace".to_owned(), dependency_path(fixture.child("legacy-workspace")));
+    let _legacy_missing = manifest
+      .dependencies
+      .insert("legacy_missing".to_owned(), dependency_path(fixture.child("legacy-missing")));
+    let _registry = manifest.dependencies.insert("registry".to_owned(), dependency(false));
+    let _dev_external = manifest
+      .dev_dependencies
+      .insert("dev_external".to_owned(), dependency_path(&dev_external));
+    let _dev_workspace = manifest
+      .dev_dependencies
+      .insert("dev_workspace".to_owned(), dependency_path(fixture.child("dev-workspace")));
+    let _dev_missing = manifest
+      .dev_dependencies
+      .insert("dev_missing".to_owned(), dependency_path(fixture.child("dev-missing")));
+
+    let mut target = TargetDependencies {
+      dependencies:     Map::new(),
+      dev_dependencies: Map::new(),
+    };
+    let _target_external = target
+      .dependencies
+      .insert("target_external".to_owned(), dependency_path(&target_external));
+    let _target_workspace = target
+      .dependencies
+      .insert("target_workspace".to_owned(), dependency_path(fixture.child("target-workspace")));
+    let _target_missing = target
+      .dependencies
+      .insert("target_missing".to_owned(), dependency_path(fixture.child("target-missing")));
+    let _target_dev_external = target
+      .dev_dependencies
+      .insert("target_dev_external".to_owned(), dependency_path(&target_dev_external));
+    let _target_dev_workspace = target.dev_dependencies.insert(
+      "target_dev_workspace".to_owned(),
+      dependency_path(fixture.child("target-dev-workspace")),
+    );
+    let _target_dev_missing = target.dev_dependencies.insert(
+      "target_dev_missing".to_owned(),
+      dependency_path(fixture.child("target-dev-missing")),
+    );
+    let _target = manifest.target.insert("cfg(unix)".to_owned(), target);
+
+    let packages = ["legacy_workspace", "dev_workspace", "target_workspace", "target_dev_workspace"].map(|name| PackageMetadata {
+      name:          name.to_owned(),
       targets:       Vec::<BuildTarget>::new(),
       manifest_path: PathBuf::new(),
-    }];
+    });
 
     let paths = path_dependencies_of(&manifest, &packages);
-    let only = ensure_some(paths.first(), "one external path dependency remains")?;
+    let names = paths.iter().map(|path| path.name.as_str()).collect::<Vec<_>>();
+    let classes = paths.iter().map(|path| path.class).collect::<Vec<_>>();
 
     ensure_all(&[
-      (paths.len() == 1, "workspace and non-canonicalizable path dependencies are skipped"),
-      (only.name == "external", "external path dependencies are retained by name"),
       (
-        only.normalized_path.as_ref()
-          == Directory::new(external.canonicalize().map_err(|error| TestFailure::Caused {
-            context: "canonicalize external dependency",
-            source:  Box::new(error),
-          })?)
-          .as_ref(),
-        "external path dependencies are canonicalized",
+        names == ["legacy_external", "dev_external", "target_external", "target_dev_external"],
+        "path dependencies are collected in deterministic manifest-table order",
+      ),
+      (
+        classes
+          == [
+            PathDependencyClass::LegacyTopLevel,
+            PathDependencyClass::Additional,
+            PathDependencyClass::Additional,
+            PathDependencyClass::Additional,
+          ],
+        "only root dependencies receive the historical compatibility class",
+      ),
+      (
+        paths.iter().all(|path| path.normalized_path.as_ref().is_absolute()),
+        "every retained path dependency is canonicalized",
+      ),
+      (
+        paths.len() == 4,
+        "workspace, missing, and non-path entries are excluded from every table",
       ),
     ])
   }

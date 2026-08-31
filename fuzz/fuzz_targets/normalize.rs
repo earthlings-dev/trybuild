@@ -18,6 +18,17 @@ mod internal {
             pub(in crate::internal) name: String,
             /// The canonicalized path to the dependency on disk.
             pub(in crate::internal) normalized_path: Directory,
+            /// Whether the dependency belongs to the historical or expanded discovery set.
+            pub(in crate::internal) class: PathDependencyClass,
+        }
+
+        /// The compatibility class of a discovered path dependency.
+        #[derive(Copy, Clone, Debug, PartialEq, Eq)]
+        pub(in crate::internal) enum PathDependencyClass {
+            /// A root dependency recognized by historical normalization stages.
+            LegacyTopLevel,
+            /// A dependency discovered from an expanded manifest table.
+            Additional,
         }
     }
 
@@ -62,6 +73,7 @@ mod internal {
 
     use self::diagnostics::normalize::{self, Context};
     use self::model::PathDependency;
+    use self::model::PathDependencyClass;
     use self::sys::directory::Directory;
     use libfuzzer_sys::fuzz_target;
     use std::path::Path;
@@ -76,10 +88,18 @@ mod internal {
             source_dir: &Directory::new("/git/trybuild/test_suite"),
             workspace: &Directory::new("/git/trybuild"),
             target_dir: &Directory::new("/git/trybuild/target"),
-            path_dependencies: &[PathDependency {
-                name: String::from("diesel"),
-                normalized_path: Directory::new("/home/user/documents/rust/diesel/diesel"),
-            }],
+            path_dependencies: &[
+                PathDependency {
+                    name: String::from("diesel"),
+                    normalized_path: Directory::new("/home/user/documents/rust/diesel/diesel"),
+                    class: PathDependencyClass::LegacyTopLevel,
+                },
+                PathDependency {
+                    name: String::from("diesel_derives"),
+                    normalized_path: Directory::new("/home/user/documents/rust/diesel/diesel/derives"),
+                    class: PathDependencyClass::Additional,
+                },
+            ],
         };
         let mut variations = normalize::diagnostics(string, &context);
         let preferred = variations.preferred();

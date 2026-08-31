@@ -485,9 +485,6 @@ fn target() -> Vec<&'static str> {
 mod tests {
   use std::collections::BTreeMap as Map;
   use std::fs;
-  #[cfg(unix)]
-  use std::os::unix::fs::PermissionsExt as _;
-  use std::path::Path;
   use std::path::PathBuf;
   use std::result::Result as StdResult;
 
@@ -501,6 +498,10 @@ mod tests {
   use strict_test_support::process_output;
 
   use super::*;
+  use crate::internal::build::json::parse_cargo_json;
+  use crate::internal::model::Expected;
+  use crate::internal::model::Test;
+  use crate::internal::path::CanonicalPath;
   use crate::internal::project::KeepGoing;
   use crate::internal::project::Selected;
   use crate::internal::project::manifest::Bin;
@@ -604,6 +605,12 @@ mod tests {
     ])
   }
 
+  /// Verify that a child-process status was returned as observable trybuild
+  /// data instead of being converted into an execution error.
+  fn ensure_observed_status(output: &ProcessOutput, expected: i32, context: &'static str) -> StdResult<(), TestFailure> {
+    ensure(output.status.code() == Some(expected), context)
+  }
+
   fn write_project(project: &Project, main_rs: &str) -> StdResult<(), TestFailure> {
     ensure_ok_source(fs::create_dir_all(project.dir.as_ref()), "project dir can be created")?;
     ensure_ok_source(fs::create_dir_all(project.workspace.as_ref()), "workspace dir can be created")?;
@@ -629,6 +636,25 @@ path = "main.rs"
       "project manifest can be written",
     )?;
     ensure_ok_source(fs::write(project.dir.join("main.rs"), main_rs), "project main can be written")
+  }
+
+  /// Create a dependency-preparation project with both directory roots and a
+  /// workspace lockfile, leaving each test to specialize the destination state.
+  fn dependency_project_with_workspace_lockfile(fixture: &TempDir, contents: &str) -> StdResult<Project, TestFailure> {
+    let project = project(fixture, "demo-tests", Selected::CompileFailOnly, None);
+    ensure_ok_source(
+      fs::create_dir_all(project.workspace.as_ref()),
+      "the workspace fixture directory must exist",
+    )?;
+    ensure_ok_source(
+      fs::create_dir_all(project.dir.as_ref()),
+      "the generated project fixture directory must exist",
+    )?;
+    ensure_ok_source(
+      fs::write(project.workspace.join("Cargo.lock"), contents),
+      "the workspace lockfile fixture must exist",
+    )?;
+    Ok(project)
   }
 
   #[test]
@@ -741,6 +767,37 @@ path = "main.rs"
   }
 
   #[test]
+  fn dependency_preparation_continues_when_the_destination_lockfile_cannot_be_seeded() -> StdResult<(), TestFailure> {
+    let fixture = TempDir::new("dependency-lock-destination")?;
+    let mut project = dependency_project_with_workspace_lockfile(&fixture, "workspace lockfile")?;
+    ensure_ok_source(
+      fs::create_dir_all(project.dir.join("Cargo.lock")),
+      "a directory collision must make the destination lockfile uncreatable",
+    )?;
+    let recorder = RecordingEffects::default();
+    recorder.queue_process_result(Ok(process_output(0, Vec::new(), Vec::new())?));
+    recorder.queue_process_result(Ok(process_output(0, Vec::new(), Vec::new())?));
+    recorder.queue_process_result(Ok(process_output(0, Vec::new(), Vec::new())?));
+    let cargo = recording_cargo(&recorder, None);
+
+    ensure_ok_source(
+      build_dependencies_with(&cargo, &mut project),
+      "dependency preparation must defer an unseedable destination lockfile to Cargo",
+    )?;
+
+    ensure_all(&[
+      (
+        project.dir.join("Cargo.lock").is_dir(),
+        "best-effort lockfile seeding must preserve the colliding directory",
+      ),
+      (
+        recorder.process_requests().len() == 3,
+        "an unseedable lockfile must not skip dependency build, keep-going probing, or cleanup",
+      ),
+    ])
+  }
+
+  #[test]
   fn run_test_falls_back_to_cargo_run_when_executable_is_absent() -> StdResult<(), TestFailure> {
     let fixture = TempDir::new("run-test-cargo")?;
     let project = project(&fixture, "demo-tests", Selected::PassOnly, None);
@@ -781,33 +838,44 @@ path = "main.rs"
     ])
   }
 
-  #[cfg(unix)]
   #[test]
-  fn run_test_prefers_reported_executable_paths() -> StdResult<(), TestFailure> {
+  fn run_test_executes_the_artifact_reported_by_a_completed_build() -> StdResult<(), TestFailure> {
     let fixture = TempDir::new("run-test-executable")?;
     let project = project(&fixture, "demo-tests", Selected::PassOnly, None);
-    ensure_ok_source(fs::create_dir_all(project.dir.as_ref()), "project dir can be created")?;
-    let executable = fixture.child("reported-executable.sh");
-    ensure_ok_source(
-      fs::write(&executable, "#!/bin/sh\nprintf direct\n"),
-      "reported executable can be written",
+    write_project(&project, "fn main() { println!(\"direct\"); }\n")?;
+    let name = Name("demo-tests".to_owned());
+    let source = project.dir.join("main.rs");
+    let source_path = CanonicalPath::new(&source);
+    let case = Test {
+      path:     PathBuf::from("main.rs"),
+      expected: Expected::Pass,
+    };
+    let mut path_map = Map::new();
+    let _previous = path_map.insert(source_path.clone(), (&name, &case));
+
+    let build_output = ensure_ok_source(
+      build_test(&project, &name),
+      "the fixture executable can be produced by a completed Cargo build",
     )?;
-    let mut permissions = ensure_ok_source(fs::metadata(&executable), "reported executable metadata can be read")?.permissions();
-    permissions.set_mode(0o755);
-    ensure_ok_source(
-      fs::set_permissions(&executable, permissions),
-      "reported executable can be made executable",
+    ensure(
+      build_output.status.success(),
+      "the Cargo build that publishes the executable fixture must succeed",
+    )?;
+    let parsed = parse_cargo_json(&project, &build_output.stdout, &path_map);
+    let executable = ensure_some(
+      parsed.executables.get(&source_path),
+      "the completed Cargo build must report its published executable path",
     )?;
 
     let output = ensure_ok_source(
-      run_test(&project, &Name("demo-tests".to_owned()), Some(Path::new(&executable))),
-      "reported executable path is runnable",
+      run_test(&project, &name, Some(executable)),
+      "the executable reported after Cargo exits is runnable",
     )?;
 
     ensure_all(&[
       (output.status.success(), "reported executable exits successfully"),
       (
-        String::from_utf8_lossy(&output.stdout) == "direct",
+        String::from_utf8_lossy(&output.stdout) == "direct\n",
         "reported executable output is captured directly",
       ),
     ])
@@ -864,8 +932,12 @@ path = "main.rs"
         "single-build planning must preserve the complete Cargo argument grammar and order",
       ),
       (
-        request.stdout == OutputPolicy::Capture && request.stderr == OutputPolicy::Capture,
-        "single-build planning must capture both output streams",
+        request.stdout == OutputPolicy::Capture,
+        "single-build planning must capture standard output",
+      ),
+      (
+        request.stderr == OutputPolicy::Capture,
+        "single-build planning must capture standard error",
       ),
     ])
   }
@@ -887,34 +959,27 @@ path = "main.rs"
       "the batched build must execute one process request",
     )?;
 
-    ensure(
-      output.status.code() == Some(101),
-      "strict-standard must not interpret Cargo's compiler-failure status",
-    )?;
-    ensure(
-      request.arguments.iter().any(|argument| argument == "--bins")
-        && request.arguments.iter().any(|argument| argument == "--keep-going")
-        && request.arguments.iter().all(|argument| argument != "--bin"),
-      "the batched grammar must select all bins with keep-going and no named-bin option",
-    )
+    ensure_observed_status(&output, 101, "strict-standard must not interpret Cargo's compiler-failure status")?;
+    ensure_all(&[
+      (
+        request.arguments.iter().any(|argument| argument == "--bins"),
+        "the batched grammar must select all bins",
+      ),
+      (
+        request.arguments.iter().any(|argument| argument == "--keep-going"),
+        "the batched grammar must retain compilation after an individual bin fails",
+      ),
+      (
+        request.arguments.iter().all(|argument| argument != "--bin"),
+        "the batched grammar must not select one named bin",
+      ),
+    ])
   }
 
   #[test]
   fn dependency_preparation_stops_after_a_terminal_build_failure() -> StdResult<(), TestFailure> {
     let fixture = TempDir::new("dependency-terminal-failure")?;
-    let mut project = project(&fixture, "demo-tests", Selected::CompileFailOnly, None);
-    ensure_ok_source(
-      fs::create_dir_all(project.workspace.as_ref()),
-      "the workspace fixture directory must exist",
-    )?;
-    ensure_ok_source(
-      fs::write(project.workspace.join("Cargo.lock"), ""),
-      "the workspace lockfile must suppress lockfile generation",
-    )?;
-    ensure_ok_source(
-      fs::create_dir_all(project.dir.as_ref()),
-      "the generated project directory must exist",
-    )?;
+    let mut project = dependency_project_with_workspace_lockfile(&fixture, "")?;
     let recorder = RecordingEffects::default();
     recorder.queue_process_result(Ok(process_output(101, Vec::new(), b"dependency failed".to_vec())?));
     let cargo = recording_cargo(&recorder, None);
@@ -964,13 +1029,18 @@ path = "main.rs"
         requests.len() == 3,
         "successful preparation must build dependencies, probe keep-going, and clean",
       )?;
-      ensure(
-        probe.stdout == OutputPolicy::Discard
-          && probe.stderr == OutputPolicy::Discard
-          && clean.stdout == OutputPolicy::Discard
-          && clean.stderr == OutputPolicy::Discard,
-        "probe and cleanup requests must discard output they do not consume",
-      )?;
+      ensure_all(&[
+        (
+          probe.stdout == OutputPolicy::Discard,
+          "the keep-going probe must discard standard output",
+        ),
+        (
+          probe.stderr == OutputPolicy::Discard,
+          "the keep-going probe must discard standard error",
+        ),
+        (clean.stdout == OutputPolicy::Discard, "suite cleanup must discard standard output"),
+        (clean.stderr == OutputPolicy::Discard, "suite cleanup must discard standard error"),
+      ])?;
     }
     Ok(())
   }
@@ -1003,14 +1073,17 @@ path = "main.rs"
       .collect::<Vec<_>>();
     ensure_project_process_context(run_request, &project)?;
 
-    ensure(
-      run_output.status.code() == Some(7),
-      "pass-test status interpretation must remain in trybuild's runner",
-    )?;
-    ensure(
-      run_request.arguments.iter().any(|argument| argument == "run") && metadata_request.arguments == expected_metadata_arguments,
-      "run and metadata must retain their distinct Cargo grammars",
-    )?;
+    ensure_observed_status(&run_output, 7, "pass-test status interpretation must remain in trybuild's runner")?;
+    ensure_all(&[
+      (
+        run_request.arguments.iter().any(|argument| argument == "run"),
+        "the pass-test fallback must retain the Cargo run grammar",
+      ),
+      (
+        metadata_request.arguments == expected_metadata_arguments,
+        "metadata discovery must retain its exact Cargo grammar",
+      ),
+    ])?;
     ensure(
       metadata.packages.is_empty(),
       "metadata parsing must preserve the decoded package collection",

@@ -17,9 +17,11 @@ use self::Normalization::AndOthersVerbose;
 use self::Normalization::ArrowOtherCrate;
 use self::Normalization::Basic;
 use self::Normalization::CargoRegistry;
+use self::Normalization::CustomRegistry;
 use self::Normalization::DependencyVersion;
 use self::Normalization::HeadingNote;
 use self::Normalization::LinesOutsideInputFile;
+use self::Normalization::MorePathDependencies;
 use self::Normalization::PathDependencies;
 use self::Normalization::RelativeToDir;
 use self::Normalization::RustLib;
@@ -36,6 +38,7 @@ use self::Normalization::UnindentMultilineNote;
 use self::Normalization::UnindentSuggestion;
 use self::Normalization::WorkspaceLines;
 use crate::internal::model::PathDependency;
+use crate::internal::model::PathDependencyClass;
 use crate::internal::sys::directory::Directory;
 
 /// The per-diagnostic context the normalizer needs to recognize and rewrite
@@ -106,6 +109,8 @@ normalizations! {
     DependencyVersion,
     HeadingNote,
     UnindentSuggestion,
+    CustomRegistry,
+    MorePathDependencies,
     // New normalization steps are to be inserted here at the end so that any
     // snapshots saved before your normalization change remain passing.
 }
@@ -358,22 +363,39 @@ impl Filter<'_> {
     false
   }
 
-  /// Rewrites the first matching path dependency to `$<NAME>`, returning
-  /// whether a rewrite occurred.
+  /// Rewrites a matching path dependency to `$<NAME>`, returning whether a
+  /// rewrite occurred.
+  ///
+  /// Historical variations inspect only root dependencies and keep the first
+  /// match. The newest variation also inspects additional dependency tables and
+  /// chooses the longest path, retaining the first candidate on equal lengths.
   #[allow(
     clippy::single_call_fn,
     reason = "path-dependency rewriting maps canonical dependency roots onto stable uppercase snapshot variables"
   )]
   fn replace_path_dependency(&self, line: &mut String, line_lower: &str) -> bool {
-    for path_dep in self.context.path_dependencies {
-      let path_dep_pat = lower_slash(&path_dep.normalized_path.to_string_lossy());
-      if let Some(i) = line_lower.find(&path_dep_pat) {
-        let var = format!("${}", path_dep.name.to_uppercase().replace('-', "_"));
-        line.replace_range(i..i.saturating_add(path_dep_pat.len()).saturating_sub(1), &var);
-        return true;
-      }
-    }
-    false
+    let include_additional = self.normalization >= MorePathDependencies;
+    let mut matches = self
+      .context
+      .path_dependencies
+      .iter()
+      .filter(|path_dep| include_additional || path_dep.class == PathDependencyClass::LegacyTopLevel)
+      .filter_map(|path_dep| {
+        let pattern = lower_slash(&path_dep.normalized_path.to_string_lossy());
+        line_lower.find(&pattern).map(|start| (start, path_dep, pattern))
+      });
+    let selected = if include_additional {
+      matches.min_by_key(|candidate| cmp::Reverse(candidate.2.len()))
+    } else {
+      matches.next()
+    };
+    let Some((start, path_dep, pattern)) = selected else {
+      return false;
+    };
+
+    let variable = format!("${}", path_dep.name.to_uppercase().replace('-', "_"));
+    line.replace_range(start..start.saturating_add(pattern.len()).saturating_sub(1), &variable);
+    true
   }
 
   /// Rewrites a cargo registry path to `$CARGO` (and the version to `$VERSION`
@@ -384,20 +406,25 @@ impl Filter<'_> {
     reason = "Cargo registry rewriting validates the registry hash shape before substituting stable root and optional version markers"
   )]
   fn replace_cargo_registry(&self, line: &mut String, indent: usize) -> bool {
-    let Some(pos) = line
-      .find("/registry/src/github.com-")
-      .or_else(|| line.find("/registry/src/index.crates.io-"))
-    else {
+    const PREFIX: &str = "/registry/src/";
+
+    let Some(pos) = line.find(PREFIX) else {
       return false;
     };
-    let Some(dash) = line.get(pos..).unwrap_or("").find('-') else {
+    let rest = line.get(pos.saturating_add(PREFIX.len())..).unwrap_or("");
+    let Some(slash) = rest.find('/') else {
       return false;
     };
-    let hash_start = pos.saturating_add(dash).saturating_add(1);
-    let hash_end = hash_start.saturating_add(16);
-    if !line.get(hash_start..hash_end).is_some_and(is_ascii_lowercase_hex) || !line.get(hash_end..).unwrap_or("").starts_with('/') {
+    let segment = rest.get(..slash).unwrap_or("");
+    let Some((registry, hash)) = segment.rsplit_once('-') else {
+      return false;
+    };
+    let recognized_registry = self.normalization >= CustomRegistry || registry == "github.com" || registry == "index.crates.io";
+    if registry.is_empty() || !recognized_registry || hash.len() != 16 || !is_ascii_lowercase_hex(hash) {
       return false;
     }
+
+    let hash_end = pos.saturating_add(PREFIX.len()).saturating_add(slash);
 
     // --> /home/.cargo/registry/src/github.com-1ecc6299db9ec823/serde_json-1.0.64/src/de.rs:2584:8
     // --> $CARGO/serde_json-1.0.64/src/de.rs:2584:8

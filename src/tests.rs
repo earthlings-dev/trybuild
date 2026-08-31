@@ -28,6 +28,7 @@ macro_rules! test_normalize {
                 path_dependencies: &[crate::internal::model::PathDependency {
                     name: String::from("diesel"),
                     normalized_path: crate::internal::sys::directory::Directory::new("/home/user/documents/rust/diesel/diesel"),
+                    class: crate::internal::model::PathDependencyClass::LegacyTopLevel,
                 }],
             };
             let original = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/tests/inputs/", $name, ".stderr"));
