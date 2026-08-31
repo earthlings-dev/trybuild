@@ -15,7 +15,7 @@ keywords = ["macros", "testing", "dev-dependencies"]
 license = "MIT OR Apache-2.0"
 license-file = "LICENSE-APACHE"
 repository = "https://github.com/strict-rs/strict-trybuild"
-rust-version = "1.97"
+rust-version = "1.98"
 readme       = "README.md"
 publish = false
 
@@ -26,12 +26,12 @@ authors.workspace = true
 categories.workspace = true
 description.workspace = true
 documentation.workspace = true
-edition.workspace = true
+edition = { workspace = true }
 exclude = ["build.rs", "screenshots/*"]
 keywords.workspace = true
 license.workspace = true
 repository.workspace = true
-rust-version.workspace = true
+rust-version = { workspace = true }
 
 [[test]]
 name = "build_script"
@@ -90,6 +90,9 @@ parking_lot = "0.12"
 [patch.crates-io]
 trybuild = { path = ".", version = "1" }
 "thiserror" = {  version = "2.1.0", git = "https://github.com/strict-rs/strict-thiserror.git", branch = "upgrade" }
+
+[patch."https://github.com/strict-rs/strict-trybuild.git"]
+trybuild = { path = "." }
 
 
 

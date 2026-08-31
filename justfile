@@ -126,11 +126,11 @@ gen-lint-template *args:
 # in place: `just migrate-md [PATH]`. PATH may be a file or a directory
 # (recursive); with no PATH it self-heals legacy fragment layouts instead.
 migrate-md *args:
-    template agent migrate --from "{{invocation_directory()}}" {{args}}
+    template docs migrate --from "{{invocation_directory()}}" {{args}}
 
 # Regenerate generated Markdown docs from configured fragments.
 gen-md:
-    template agent generate
+    template docs gen
 
 # Render live repo structure, command, gate, and generated-doc facts.
 repo-overview *args:
